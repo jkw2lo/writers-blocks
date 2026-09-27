@@ -233,3 +233,92 @@ export function renderMarkdown(md) {
   closeList();
   return out.join('');
 }
+
+// ---- brainstorming ----------------------------------------------------------------
+
+function scopeContext(p, id) {
+  return id === 'root' ? `${bookHeader(p)}\n\nFull outline:\n${outline(p, null)}` : context(p, id);
+}
+
+function scopeName(p, id) {
+  const n = p.nodes[id];
+  return id === 'root' ? 'the book as a whole' : `the CURRENT ${TYPES[n.type].label.toLowerCase()} ("${n.title}")`;
+}
+
+function notebookDigest(p) {
+  const notes = p.notebook.filter((n) => n.text.trim());
+  if (!notes.length) return '(The notebook is empty.)';
+  return notes.map((n) => {
+    const about = n.nodeId && p.nodes[n.nodeId] ? ` (about "${p.nodes[n.nodeId].title}")` : '';
+    return `- ${n.text.trim().replace(/\s+/g, ' ')}${about}`;
+  }).join('\n');
+}
+
+export const IDEA_KINDS = ['twist', 'character', 'image', 'stakes', 'structure', 'theme', 'question'];
+
+export const brainstorm = {
+  whatIf: {
+    schema: {
+      type: 'object',
+      properties: {
+        ideas: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { idea: { type: 'string' }, kind: { type: 'string', enum: IDEA_KINDS } },
+            required: ['idea', 'kind'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['ideas'],
+      additionalProperties: false,
+    },
+    run(s, p, id) {
+      return call(s, `${scopeContext(p, id)}
+
+Ideas already in the writer's notebook (build on them if useful, but don't repeat them):
+${notebookDigest(p)}
+
+Brainstorm 8 divergent "what if…" possibilities for ${scopeName(p, id)}. Spread them from grounded and quietly useful to strange and risky. Each is a seed of one or two sentences, specific to this material (use the names, places, objects and arguments already in play). They are not prose for the book and not generic writing advice. Tag each with the kind of idea it is. Return JSON.`, { schema: this.schema });
+    },
+  },
+  interview: {
+    schema: {
+      type: 'object',
+      properties: { questions: { type: 'array', items: { type: 'string' } } },
+      required: ['questions'],
+      additionalProperties: false,
+    },
+    run(s, p, id) {
+      return call(s, `${scopeContext(p, id)}
+
+Ideas in the writer's notebook:
+${notebookDigest(p)}
+
+Interview me to help me discover what should happen in ${scopeName(p, id)} and what it's really about. Ask 5 short questions that only the author can answer, specific to this material, and not answerable by looking at the outline. Mix practical ones (what happens, who, where) with deeper ones (why it matters, what it costs). Return JSON.`, { schema: this.schema });
+    },
+  },
+  riff: {
+    schema: {
+      type: 'object',
+      properties: { riffs: { type: 'array', items: { type: 'string' } } },
+      required: ['riffs'],
+      additionalProperties: false,
+    },
+    run(s, p, note) {
+      const about = note.nodeId && p.nodes[note.nodeId] ? `\n\nThis note is attached to:\n${describe(p.nodes[note.nodeId], false)}` : '';
+      return call(s, `${bookHeader(p)}
+
+Full outline:
+${outline(p, note.nodeId)}${about}
+
+A note from my notebook:
+"""
+${note.text}
+"""
+
+Riff on this note. Give 5 distinct variations that push it somewhere new: for example invert it, raise the stakes, zoom into one concrete detail, connect it to something already in the outline, or move it to a different point in the book. Each is one or two sentences, specific and concrete, not prose for the book. Return JSON.`, { schema: this.schema });
+    },
+  },
+};

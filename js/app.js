@@ -1,6 +1,7 @@
 import * as M from './model.js';
 import * as S from './storage.js';
 import * as AI from './ai.js';
+import { dealPrompt } from './prompts.js';
 
 // ---- state -------------------------------------------------------------------
 
@@ -19,13 +20,18 @@ const state = {
   undo: [],
   drag: null, // { kind: 'node' | 'note', id }
   aiResults: {}, // nodeId -> { action, loading, error, html, data }
+  spark: null, // current brainstorm result { scopeId, kind, ... }
+  riffing: null,
+  noteFilter: '',
+  noteScope: 'all',
+  canvasScroll: null,
   recent: null,
 };
 
 // Per-device preferences only (never manuscript data).
 const prefs = loadPrefs();
 function loadPrefs() {
-  const d = { theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19 };
+  const d = { theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10 };
   try { return { ...d, ...JSON.parse(localStorage.getItem('wb-prefs') || '{}') }; } catch { return d; }
 }
 function savePrefs() {
@@ -79,6 +85,8 @@ const ICONS = {
   note: 'M5 4h14v12l-4 4H5zM15 20v-4h4',
   search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM20 20l-4-4',
   arrowL: 'M15 6l-6 6 6 6',
+  link: 'M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1',
+  bulb: 'M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0012 3z',
   close: 'M6 6l12 12M18 6L6 18',
 };
 function icon(name, cls = '') {
@@ -195,6 +203,7 @@ function loadProject(text, { handle = null, name = null } = {}) {
   state.selectedId = firstLeaf(p) || 'root';
   state.undo = [];
   state.aiResults = {};
+  state.spark = null;
   render();
 }
 
@@ -212,6 +221,7 @@ async function cmdNew() {
   state.fileName = null;
   state.undo = [];
   state.aiResults = {};
+  state.spark = null;
   state.selectedId = 'root';
   state.dirty = true;
   render();
@@ -354,7 +364,7 @@ function placeNote(noteId, parentId, index = null) {
   const title = firstLine.length > 60 ? `${firstLine.slice(0, 57).trim()}…` : firstLine || 'From notebook';
   const n = M.addNode(P(), parentId, M.TYPES[parent.type].child, index, title);
   n.content = textToHtml(note.text);
-  P().notebook = P().notebook.filter((x) => x.id !== noteId);
+  M.removeNote(P(), noteId);
   changed();
   render();
   toast(`Placed in “${parent.title}”.`, { undo: true });
@@ -846,50 +856,575 @@ function statusSelect(n) {
   }, M.STATUSES.map((s) => h('option', { value: s.id, selected: s.id === n.status }, s.label)));
 }
 
+// ---- notebook: ideas on a grid or a canvas -----------------------------------------
+
+const CANVAS_W = 4000;
+const CANVAS_H = 3000;
+const NOTE_W = 240;
+const SOURCES = {
+  ai: '✦ AI',
+  freewrite: '⏱ Freewrite',
+  prompt: '❖ Prompt',
+  collide: '⚭ Collision',
+  interview: '? Interview',
+};
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function newNote(text, extra = {}) {
+  const note = M.makeNote(text, extra);
+  P().notebook.push(note);
+  return note;
+}
+
+function deleteNote(id) {
+  snapshot();
+  M.removeNote(P(), id);
+  changed();
+  render();
+  toast('Idea deleted.', { undo: true });
+}
+
+function focusNote(id) {
+  requestAnimationFrame(() => document.querySelector(`[data-note="${id}"] textarea`)?.focus());
+}
+
+const hereLabel = (n) => (n.id === 'root' ? 'the book' : `“${n.title}”`);
+const aiReady = () => prefs.aiEnabled && !!sessionKey;
+const aiError = (e) => (e?.status === 401 ? 'Your API key was rejected. Check it in Settings.' : e?.message || String(e));
+
+function placeOptions() {
+  const p = P();
+  return [h('option', { value: '' }, 'Make it a block…'),
+    h('option', { value: 'root' }, `in ${p.nodes.root.title}`),
+    ...M.flatten(p).filter(({ node }) => node.type !== 'section').map(({ node, depth }) =>
+      h('option', { value: node.id }, `${'  '.repeat(depth + 1)}in ${node.title}`))];
+}
+
 function renderNotebook() {
   const p = P();
-  const q = (state.noteFilter || '').toLowerCase();
-  const notes = [...p.notebook].reverse().filter((n) => !q || n.text.toLowerCase().includes(q));
+  const q = state.noteFilter.trim().toLowerCase();
+  const canvas = prefs.notebookLayout === 'canvas';
+  const visible = p.notebook.filter((n) =>
+    (!q || n.text.toLowerCase().includes(q)) &&
+    (state.noteScope === 'all' || (state.noteScope === 'loose' ? !n.nodeId : !!n.nodeId)));
+
   const capture = autoGrow(h('textarea', {
-    class: 'capture', rows: 3, placeholder: 'Jot an idea, a line of dialogue, a fragment, a “what if”…  (⌘/Ctrl + Enter to add)',
+    class: 'capture', rows: canvas ? 1 : 3,
+    placeholder: 'Jot an idea, a line of dialogue, a fragment, a “what if”…  (⌘/Ctrl + Enter to add)',
     onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addNote(); },
   }));
   function addNote() {
     const text = capture.value.trim();
     if (!text) return;
-    p.notebook.push({ id: M.uid(), text, createdAt: new Date().toISOString() });
+    const extra = {};
+    if (canvas) {
+      const s = state.canvasScroll || { l: 0, t: 0 };
+      const k = p.notebook.length % 6;
+      extra.x = Math.round(s.l / prefs.zoom + 60 + k * 24);
+      extra.y = Math.round(s.t / prefs.zoom + 60 + k * 24);
+    }
+    newNote(text, extra);
     changed();
     render();
     document.querySelector('.capture')?.focus();
   }
-  const placeOptions = [h('option', { value: '' }, 'Place in book…'),
-    h('option', { value: 'root' }, p.nodes.root.title),
-    ...M.flatten(p).filter(({ node }) => node.type !== 'section').map(({ node, depth }) =>
-      h('option', { value: node.id }, `${'  '.repeat(depth + 1)}${node.title}`))];
 
-  return h('div', { class: 'notebook' },
+  const refocus = (sel) => { const i = document.querySelector(sel); i?.focus(); i?.setSelectionRange(i.value.length, i.value.length); };
+
+  return h('div', { class: `notebook ${canvas ? 'canvas-mode' : ''}` },
     h('div', { class: 'outline-head' },
       h('h2', null, 'Notebook'),
-      h('p', { class: 'muted' }, 'Loose ideas and fragments that don’t have a home yet. When one finds its place, drag it onto the outline at left, or use “Place in book”, and it becomes a block with its text.')),
-    h('div', { class: 'capture-wrap' }, capture, h('button', { class: 'btn primary', onclick: addNote }, 'Add to notebook')),
-    p.notebook.length > 4 && h('input', { class: 'note-filter', type: 'search', placeholder: 'Search notes…', value: state.noteFilter || '', oninput: (e) => { state.noteFilter = e.target.value; render(); const i = document.querySelector('.note-filter'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }),
-    notes.length === 0 && h('p', { class: 'empty' }, p.notebook.length ? 'No notes match.' : 'Your notebook is empty. Anything goes here.'),
-    h('div', { class: 'notes' }, notes.map((note) => {
-      const card = h('article', { class: 'note' },
-        autoGrow(h('textarea', { value: note.text, 'aria-label': 'Note', oninput: (e) => { note.text = e.target.value; changed(); } })),
-        h('div', { class: 'note-foot' },
-          h('span', { class: 'muted small' }, new Date(note.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
-          h('span', { class: 'spacer' }),
-          h('select', { class: 'place', 'aria-label': 'Place in book', onchange: (e) => e.target.value && placeNote(note.id, e.target.value) }, placeOptions.map((o) => o.cloneNode(true))),
-          h('button', {
-            class: 'icon-btn small', title: 'Delete note',
-            onclick: () => { snapshot(); p.notebook = p.notebook.filter((x) => x.id !== note.id); changed(); render(); toast('Note deleted.', { undo: true }); },
-          }, icon('trash'))));
-      makeDraggable(card, 'note', note.id);
-      card.addEventListener('mousedown', (e) => { card.draggable = !e.target.closest('textarea,select,button'); });
-      return card;
-    })),
+      !canvas && h('p', { class: 'muted' }, 'Loose ideas and fragments that don’t have a home yet. When one finds its place, drag it onto the outline at left or use “Make it a block”. Try the Canvas to spread ideas out, cluster them and draw connections.'),
+      h('div', { class: 'nb-controls' },
+        h('div', { class: 'seg-control' },
+          [['grid', 'Grid'], ['canvas', 'Canvas']].map(([id, label]) => h('button', {
+            class: prefs.notebookLayout === id ? 'active' : '',
+            onclick: () => { prefs.notebookLayout = id; savePrefs(); render(); },
+          }, label))),
+        h('input', { class: 'note-filter', type: 'search', placeholder: 'Search ideas…', value: state.noteFilter, oninput: (e) => { state.noteFilter = e.target.value; render(); refocus('.note-filter'); } }),
+        h('select', { class: 'note-scope', 'aria-label': 'Show', onchange: (e) => { state.noteScope = e.target.value; render(); } },
+          [['all', 'All ideas'], ['loose', 'Loose ideas'], ['attached', 'Attached to a block']].map(([v, l]) => h('option', { value: v, selected: state.noteScope === v }, l))),
+        canvas && h('div', { class: 'zoom' },
+          h('button', { class: 'icon-btn small', title: 'Zoom out', onclick: () => setZoom(prefs.zoom / 1.2) }, '−'),
+          h('button', { class: 'link', title: 'Reset zoom', onclick: () => setZoom(1) }, `${Math.round(prefs.zoom * 100)}%`),
+          h('button', { class: 'icon-btn small', title: 'Zoom in', onclick: () => setZoom(prefs.zoom * 1.2) }, '+')),
+      ),
+      canvas && h('p', { class: 'muted small canvas-tips' }, 'Double-click to add an idea · drag a note by its top edge · drag ', icon('link'), ' onto another note to connect them · click a line to remove it · drag empty space to pan · ⌘/Ctrl + scroll to zoom'),
+    ),
+    h('div', { class: 'capture-wrap' }, capture, h('button', { class: 'btn primary', onclick: addNote }, 'Add idea')),
+    canvas ? notesCanvas(new Set(visible.map((n) => n.id))) : [
+      visible.length === 0 && h('p', { class: 'empty' }, p.notebook.length ? 'No ideas match.' : 'Your notebook is empty. Anything goes here.'),
+      h('div', { class: 'notes' }, [...visible].reverse().map((n) => noteCard(n))),
+    ],
   );
+}
+
+function noteCard(note, { canvas = false, dim = false } = {}) {
+  const block = note.nodeId && P().nodes[note.nodeId];
+  const busy = state.riffing === note.id;
+  const el = h('article', {
+    class: `note c-${note.color} ${canvas ? 'cnote' : ''} ${dim ? 'dim' : ''}`,
+    'data-note': note.id,
+    style: canvas ? `left:${note.x}px;top:${note.y}px` : null,
+  },
+  canvas && h('div', { class: 'cnote-grip', title: 'Drag to move' }),
+  (block || note.source) && h('div', { class: 'note-chips' },
+    block && h('button', { class: 'chip', title: 'Open this block', onclick: () => select(block.id, 'write') }, `↳ ${block.title}`),
+    note.source && h('span', { class: 'chip src' }, SOURCES[note.source] || note.source)),
+  autoGrow(h('textarea', {
+    value: note.text, 'aria-label': 'Idea', rows: 1,
+    placeholder: note.color === 'label' ? 'Cluster label' : 'An idea…',
+    oninput: (e) => { note.text = e.target.value; changed(); if (canvas) requestAnimationFrame(drawLinks); },
+  })),
+  h('div', { class: 'note-foot' },
+    h('div', { class: 'swatches' }, M.NOTE_COLORS.map((c) => h('button', {
+      class: `sw c-${c} ${note.color === c ? 'on' : ''}`,
+      title: c === 'label' ? 'Make this a cluster label' : `${c[0].toUpperCase()}${c.slice(1)}`,
+      'aria-label': c === 'label' ? 'Label' : c,
+      onclick: () => { note.color = c; changed(); render(); },
+    }, c === 'label' ? 'T' : ''))),
+    h('span', { class: 'spacer' }),
+    aiReady() && note.color !== 'label' && h('button', {
+      class: 'icon-btn small', title: 'Riff on this idea: spin off five connected variations (AI)', disabled: busy,
+      onclick: () => riffNote(note),
+    }, busy ? h('span', { class: 'spinner' }) : icon('spark')),
+    canvas && h('button', { class: 'icon-btn small link-handle', title: 'Drag onto another note to connect them' }, icon('link')),
+    h('select', { class: 'place', title: 'Turn this idea into a block in the book', onchange: (e) => e.target.value && placeNote(note.id, e.target.value) }, placeOptions()),
+    h('button', { class: 'icon-btn small', title: 'Delete idea', onclick: () => deleteNote(note.id) }, icon('trash'))),
+  );
+  if (!canvas) {
+    makeDraggable(el, 'note', note.id);
+    el.addEventListener('mousedown', (e) => { el.draggable = !e.target.closest('textarea,select,button'); });
+  }
+  return el;
+}
+
+function ensurePositions() {
+  const notes = P().notebook;
+  const placed = notes.filter((n) => n.x != null);
+  const y0 = placed.length ? Math.max(...placed.map((n) => n.y)) + 240 : 60;
+  let i = 0;
+  for (const n of notes) {
+    if (n.x != null) continue;
+    n.x = 60 + (i % 5) * (NOTE_W + 50);
+    n.y = y0 + Math.floor(i / 5) * 220;
+    i++;
+  }
+}
+
+function setZoom(z) {
+  const wrap = document.querySelector('.canvas-wrap');
+  const old = prefs.zoom;
+  prefs.zoom = Math.min(1.6, Math.max(0.35, Math.round(z * 100) / 100));
+  savePrefs();
+  if (wrap) {
+    // Keep the centre of the view in place while zooming.
+    const cx = (wrap.scrollLeft + wrap.clientWidth / 2) / old;
+    const cy = (wrap.scrollTop + wrap.clientHeight / 2) / old;
+    state.canvasScroll = { l: cx * prefs.zoom - wrap.clientWidth / 2, t: cy * prefs.zoom - wrap.clientHeight / 2 };
+  }
+  render();
+}
+
+function notesCanvas(visibleIds) {
+  ensurePositions();
+  const notes = P().notebook;
+  const z = prefs.zoom;
+  const w = Math.max(CANVAS_W, ...notes.map((n) => n.x + NOTE_W + 800));
+  const ht = Math.max(CANVAS_H, ...notes.map((n) => n.y + 900));
+  const svg = svgEl('svg', { class: 'links', width: w, height: ht });
+  const board = h('div', { class: 'canvas', style: `width:${w}px;height:${ht}px;transform:scale(${z})` },
+    svg, notes.map((n) => noteCard(n, { canvas: true, dim: !visibleIds.has(n.id) })));
+  const wrap = h('div', { class: 'canvas-wrap' },
+    h('div', { class: 'canvas-sizer', style: `width:${w * z}px;height:${ht * z}px` }, board),
+    notes.length === 0 && h('div', { class: 'canvas-empty' }, 'Double-click anywhere to add your first idea.'));
+  wireCanvas(wrap, board, svg);
+  requestAnimationFrame(() => {
+    drawLinks();
+    if (state.canvasScroll) { wrap.scrollLeft = state.canvasScroll.l; wrap.scrollTop = state.canvasScroll.t; }
+  });
+  return wrap;
+}
+
+const centerOf = (el) => ({ x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 });
+
+function drawLinks() {
+  const svg = document.querySelector('svg.links');
+  if (!svg) return;
+  svg.querySelectorAll('g.link').forEach((g) => g.remove());
+  for (const l of P().links) {
+    const a = document.querySelector(`.cnote[data-note="${l.from}"]`);
+    const b = document.querySelector(`.cnote[data-note="${l.to}"]`);
+    if (!a || !b) continue;
+    const ca = centerOf(a);
+    const cb = centerOf(b);
+    const mx = (ca.x + cb.x) / 2;
+    const d = `M${ca.x},${ca.y} C${mx},${ca.y} ${mx},${cb.y} ${cb.x},${cb.y}`;
+    const g = svgEl('g', { class: 'link' });
+    g.append(svgEl('path', { d, class: 'hit' }), svgEl('path', { d, class: 'line' }));
+    g.addEventListener('click', () => {
+      snapshot();
+      P().links = P().links.filter((x) => x.id !== l.id);
+      changed();
+      drawLinks();
+      toast('Connection removed.', { undo: true });
+    });
+    svg.prepend(g);
+  }
+}
+
+function wireCanvas(wrap, board, svg) {
+  const toBoard = (e) => {
+    const r = board.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / prefs.zoom, y: (e.clientY - r.top) / prefs.zoom };
+  };
+  const drag = (onMove, onUp) => {
+    const up = (ev) => { removeEventListener('pointermove', onMove); removeEventListener('pointerup', up); onUp?.(ev); };
+    addEventListener('pointermove', onMove);
+    addEventListener('pointerup', up);
+  };
+
+  wrap.addEventListener('scroll', () => { state.canvasScroll = { l: wrap.scrollLeft, t: wrap.scrollTop }; });
+
+  board.addEventListener('dblclick', (e) => {
+    if (e.target !== board) return;
+    const { x, y } = toBoard(e);
+    const n = newNote('', { x: Math.round(x - NOTE_W / 2), y: Math.round(y - 24) });
+    changed();
+    render();
+    focusNote(n.id);
+  });
+
+  board.addEventListener('pointerdown', (e) => {
+    const grip = e.target.closest('.cnote-grip');
+    const handle = e.target.closest('.link-handle');
+    if (grip) {
+      e.preventDefault();
+      const el = grip.closest('.cnote');
+      const note = P().notebook.find((n) => n.id === el.dataset.note);
+      const start = toBoard(e);
+      const ox = note.x;
+      const oy = note.y;
+      el.classList.add('moving');
+      drag((ev) => {
+        const pt = toBoard(ev);
+        note.x = Math.max(0, Math.round(ox + pt.x - start.x));
+        note.y = Math.max(0, Math.round(oy + pt.y - start.y));
+        el.style.left = `${note.x}px`;
+        el.style.top = `${note.y}px`;
+        drawLinks();
+      }, () => {
+        el.classList.remove('moving');
+        if (note.x !== ox || note.y !== oy) changed();
+      });
+    } else if (handle) {
+      e.preventDefault();
+      const el = handle.closest('.cnote');
+      const c = centerOf(el);
+      const line = svgEl('line', { class: 'rubber', x1: c.x, y1: c.y, x2: c.x, y2: c.y });
+      svg.append(line);
+      drag((ev) => {
+        const pt = toBoard(ev);
+        line.setAttribute('x2', pt.x);
+        line.setAttribute('y2', pt.y);
+      }, (ev) => {
+        line.remove();
+        const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.cnote');
+        if (!target || target === el) return;
+        snapshot();
+        if (M.linkNotes(P(), el.dataset.note, target.dataset.note)) { changed(); drawLinks(); } else state.undo.pop();
+      });
+    } else if (e.target === board) {
+      const sx = e.clientX;
+      const sy = e.clientY;
+      const l = wrap.scrollLeft;
+      const t = wrap.scrollTop;
+      wrap.classList.add('panning');
+      drag((ev) => {
+        wrap.scrollLeft = l - (ev.clientX - sx);
+        wrap.scrollTop = t - (ev.clientY - sy);
+      }, () => wrap.classList.remove('panning'));
+    }
+  });
+
+  wrap.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    setZoom(prefs.zoom * (e.deltaY < 0 ? 1.1 : 0.9));
+  }, { passive: false });
+}
+
+async function riffNote(note) {
+  state.riffing = note.id;
+  render();
+  try {
+    const { riffs } = await AI.brainstorm.riff.run(aiSettings(), P(), note);
+    snapshot();
+    ensurePositions();
+    riffs.forEach((text, i) => {
+      const n = newNote(text, {
+        source: 'ai',
+        color: note.color === 'label' ? 'yellow' : note.color,
+        nodeId: note.nodeId,
+        x: note.x + NOTE_W + 90 + (i % 2) * 40,
+        y: Math.max(0, note.y + (i - (riffs.length - 1) / 2) * 175),
+      });
+      M.linkNotes(P(), note.id, n.id);
+    });
+    changed();
+    toast(`Spun off ${riffs.length} variations${prefs.notebookLayout === 'grid' ? '. Switch to Canvas to see how they connect' : ''}.`, { undo: true });
+  } catch (e) {
+    toast(aiError(e), { error: true });
+  }
+  state.riffing = null;
+  render();
+}
+
+// ---- brainstorm tools: prompts, freewrite, collide, AI sparks ------------------------
+
+function openModal(dlg) {
+  dlg.addEventListener('close', () => { dlg.remove(); render(); });
+  document.body.append(dlg);
+  dlg.showModal();
+}
+
+function openCollide() {
+  const pool = P().notebook.filter((n) => n.text.trim() && n.color !== 'label');
+  if (pool.length < 2) return toast('Collide needs at least two ideas in your notebook.');
+  let a;
+  let b;
+  const dlg = h('dialog', { class: 'modal collide' });
+  const pair = h('div', { class: 'pair' });
+  const answer = autoGrow(h('textarea', { rows: 3, placeholder: 'How might these connect? What happens if both are true? Nonsense is allowed.' }));
+  const card = (n) => h('div', { class: `note static c-${n.color}` }, h('p', null, n.text));
+  const shuffle = () => {
+    const i = Math.floor(Math.random() * pool.length);
+    let j = Math.floor(Math.random() * (pool.length - 1));
+    if (j >= i) j++;
+    [a, b] = [pool[i], pool[j]];
+    pair.replaceChildren(card(a), h('div', { class: 'plus' }, '+'), card(b));
+    answer.value = '';
+    answer.focus();
+  };
+  const keep = () => {
+    const text = answer.value.trim();
+    if (!text) return answer.focus();
+    snapshot();
+    const pos = a.x != null && b.x != null ? { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) + 140 } : {};
+    const n = newNote(text, { source: 'collide', color: 'lilac', nodeId: a.nodeId || b.nodeId || null, ...pos });
+    M.linkNotes(P(), a.id, n.id);
+    M.linkNotes(P(), b.id, n.id);
+    changed();
+    toast('Saved the connection to your notebook.');
+    shuffle();
+  };
+  dlg.append(
+    h('div', { class: 'dlg-head' }, h('h2', null, 'Collide two ideas'), h('button', { class: 'icon-btn', onclick: () => dlg.close(), title: 'Close' }, icon('close'))),
+    h('p', { class: 'muted' }, 'Two random ideas from your notebook, side by side. Unexpected pairings are where new material comes from.'),
+    pair, answer,
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn', onclick: shuffle }, 'Shuffle'),
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn primary', onclick: keep }, 'Save connection')),
+  );
+  answer.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) keep(); });
+  openModal(dlg);
+  shuffle();
+}
+
+function openFreewrite(prompt = '', scopeId = state.selectedId) {
+  let minutes = prefs.sprintMinutes || 10;
+  let strict = false;
+  let started = false;
+  let finished = false;
+  let timer;
+  let endAt;
+  const dlg = h('dialog', { class: 'sprint' });
+  const promptInput = h('input', { class: 'sprint-prompt-input', value: prompt, placeholder: 'Optional: a prompt or question to write toward' });
+  const ta = h('textarea', { class: 'sprint-text prose', placeholder: 'Go. Don’t stop, don’t fix, just keep moving…' });
+  const clock = h('span', { class: 'sprint-clock' });
+  const wc = h('span', { class: 'sprint-wc' }, '0 words');
+  const minuteBtns = h('div', { class: 'seg-control' });
+  const drawMinutes = () => minuteBtns.replaceChildren(...[5, 10, 15, 20].map((m) =>
+    h('button', { class: m === minutes ? 'active' : '', onclick: () => { minutes = m; drawMinutes(); } }, `${m} min`)));
+  drawMinutes();
+
+  const setup = h('div', { class: 'sprint-setup' },
+    h('h2', null, 'Freewrite'),
+    h('p', { class: 'muted' }, `Write without stopping for a set time${scopeId !== 'root' ? ` about ${hereLabel(P().nodes[scopeId])}` : ''}. Don’t edit and don’t judge. Whatever comes out goes into your notebook, where you can mine it later.`),
+    promptInput,
+    minuteBtns,
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (e) => (strict = e.target.checked) }), 'No deleting: backspace is switched off, so keep moving forward'),
+    h('div', { class: 'dlg-foot' },
+      h('button', { class: 'btn ghost', onclick: () => dlg.close() }, 'Cancel'),
+      h('button', { class: 'btn primary', onclick: start }, 'Start')));
+
+  const running = h('div', { class: 'sprint-run' },
+    h('div', { class: 'sprint-bar' },
+      h('span', { class: 'sprint-prompt' }),
+      h('span', { class: 'spacer' }), wc, clock,
+      h('button', { class: 'btn small', onclick: finish }, 'Done')),
+    ta);
+  running.hidden = true;
+
+  function start() {
+    started = true;
+    prefs.sprintMinutes = minutes;
+    savePrefs();
+    running.querySelector('.sprint-prompt').textContent = promptInput.value.trim();
+    setup.hidden = true;
+    running.hidden = false;
+    endAt = Date.now() + minutes * 60000;
+    tick();
+    timer = setInterval(tick, 500);
+    ta.focus();
+  }
+  function tick() {
+    const left = Math.max(0, endAt - Date.now());
+    if (left === 0) {
+      clearInterval(timer);
+      clock.textContent = 'Time’s up. Finish your thought';
+      clock.classList.add('done');
+      return;
+    }
+    const s = Math.ceil(left / 1000);
+    clock.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+  function finish() {
+    if (finished) return;
+    finished = true;
+    clearInterval(timer);
+    const text = ta.value.trim();
+    if (text) {
+      const pr = promptInput.value.trim();
+      newNote(pr ? `${pr}\n\n${text}` : text, { source: 'freewrite', color: 'peach', nodeId: scopeId !== 'root' ? scopeId : null });
+      changed();
+      toast(`Saved ${fmt(M.countWords(text))} freewritten words to your notebook.`);
+    }
+    dlg.close();
+  }
+  ta.addEventListener('input', () => { wc.textContent = `${fmt(M.countWords(ta.value))} words`; });
+  ta.addEventListener('keydown', (e) => {
+    if (strict && (e.key === 'Backspace' || e.key === 'Delete' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'x'))) e.preventDefault();
+  });
+  dlg.addEventListener('cancel', (e) => { if (started) { e.preventDefault(); finish(); } });
+  dlg.append(setup, running);
+  openModal(dlg);
+  promptInput.focus();
+}
+
+async function runSpark(scopeId, kind) {
+  state.spark = { scopeId, kind, loading: true };
+  renderInspectorOnly();
+  try {
+    const data = await AI.brainstorm[kind].run(aiSettings(), P(), scopeId);
+    state.spark = { scopeId, kind, data, kept: new Set(), answers: [] };
+  } catch (e) {
+    state.spark = { scopeId, kind, error: aiError(e) };
+  }
+  renderInspectorOnly();
+}
+
+function renderSpark(n) {
+  const sp = state.spark?.scopeId === n.id ? state.spark : null;
+  const btn = (label, hint, fn, disabled = false) => h('button', { class: 'spark-btn', title: hint, disabled, onclick: fn }, label);
+  const scope = state.view === 'notebook'
+    ? h('select', { class: 'scope-select', 'aria-label': 'Brainstorm about', onchange: (e) => { state.selectedId = e.target.value; renderInspectorOnly(); } },
+      h('option', { value: 'root', selected: n.id === 'root' }, 'about the whole book'),
+      M.flatten(P()).map(({ node, depth }) => h('option', { value: node.id, selected: node.id === n.id }, `${'  '.repeat(depth)}about ${node.title}`)))
+    : h('span', { class: 'panel-sub' }, `about ${hereLabel(n)}`);
+  return h('section', { class: 'panel spark' },
+    h('div', { class: 'panel-head' }, h('span', { class: 'eyebrow' }, icon('bulb'), ' Brainstorm'), scope),
+    h('div', { class: 'spark-grid' },
+      btn('Deal a prompt', 'A random prompt to get you thinking sideways', () => { state.spark = { scopeId: n.id, kind: 'prompt', card: dealPrompt(hereLabel(n)) }; renderInspectorOnly(); }),
+      btn('Freewrite', 'Write without stopping for a few minutes; it all goes to the notebook', () => openFreewrite('', n.id)),
+      btn('Collide', 'Two random ideas from your notebook. How do they connect?', openCollide, P().notebook.length < 2),
+      aiReady() && btn('✦ What if…?', 'Eight possibilities, from grounded to wild (AI)', () => runSpark(n.id, 'whatIf'), sp?.loading),
+      aiReady() && btn('✦ Interview me', 'Questions only you can answer (AI)', () => runSpark(n.id, 'interview'), sp?.loading),
+    ),
+    !aiReady() && h('p', { class: 'muted small' }, 'With the assistant on (Settings), you also get AI “what ifs”, interviews, and riffs on any note.'),
+    sp && renderSparkResult(sp, n),
+  );
+}
+
+function renderSparkResult(sp, n) {
+  const nodeId = n.id !== 'root' ? n.id : null;
+  const close = h('button', { class: 'icon-btn small', title: 'Dismiss', onclick: () => { state.spark = null; renderInspectorOnly(); } }, icon('close'));
+  const wrap = (label, ...kids) => h('div', { class: 'ai-result spark-result' }, h('div', { class: 'ai-result-head' }, h('span', { class: 'eyebrow' }, label), close), ...kids);
+  if (sp.loading) return h('div', { class: 'ai-result loading' }, h('span', { class: 'spinner' }), 'Brainstorming…');
+  if (sp.error) return wrap('Brainstorm', h('p', { class: 'error-text' }, sp.error));
+
+  if (sp.kind === 'prompt') {
+    return wrap(sp.card.category,
+      h('p', { class: 'prompt-text' }, sp.card.text),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn small', onclick: () => { sp.card = dealPrompt(hereLabel(n)); renderInspectorOnly(); } }, 'Another'),
+        h('button', { class: 'btn small', onclick: () => { newNote(sp.card.text, { source: 'prompt', color: 'blue', nodeId }); changed(); toast('Kept in your notebook.'); render(); } }, 'Keep as idea'),
+        h('button', { class: 'btn small primary', onclick: () => openFreewrite(sp.card.text, n.id) }, 'Freewrite on it')));
+  }
+  if (sp.kind === 'whatIf') {
+    const keep = (i) => { newNote(sp.data.ideas[i].idea, { source: 'ai', nodeId }); sp.kept.add(i); };
+    return wrap('What if…',
+      h('ol', { class: 'spark-ideas' }, sp.data.ideas.map((idea, i) => h('li', null,
+        h('span', { class: 'kind' }, idea.kind),
+        h('span', { class: 'idea-text' }, idea.idea),
+        h('button', {
+          class: 'btn small', disabled: sp.kept.has(i),
+          onclick: () => { keep(i); changed(); render(); },
+        }, sp.kept.has(i) ? 'Kept' : 'Keep')))),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn small', onclick: () => { sp.data.ideas.forEach((_, i) => !sp.kept.has(i) && keep(i)); changed(); render(); toast('All kept in your notebook.'); } }, 'Keep all'),
+        h('button', { class: 'btn small', onclick: () => runSpark(n.id, 'whatIf') }, 'More ideas')));
+  }
+  if (sp.kind === 'interview') {
+    return wrap('Interview',
+      h('p', { class: 'muted small' }, 'Answer any that spark something. Rough is fine.'),
+      h('ol', { class: 'interview' }, sp.data.questions.map((q, i) => h('li', null,
+        h('p', null, q),
+        autoGrow(h('textarea', { rows: 2, value: sp.answers[i] || '', placeholder: 'Your answer…', oninput: (e) => (sp.answers[i] = e.target.value) }))))),
+      h('div', { class: 'actions' },
+        h('button', {
+          class: 'btn small primary', onclick: () => {
+            const pairs = sp.data.questions.map((q, i) => [q, (sp.answers[i] || '').trim()]).filter(([, a]) => a);
+            if (!pairs.length) return toast('Answer at least one question first.');
+            pairs.forEach(([q, a]) => newNote(`${q}\n\n${a}`, { source: 'interview', color: 'green', nodeId }));
+            state.spark = null;
+            changed();
+            render();
+            toast(`Saved ${pairs.length} answer${pairs.length > 1 ? 's' : ''} to your notebook.`);
+          },
+        }, 'Save answers as ideas'),
+        h('button', { class: 'btn small', onclick: () => runSpark(n.id, 'interview') }, 'Different questions')));
+  }
+  return null;
+}
+
+function renderIdeasFor(n) {
+  const ideas = P().notebook.filter((x) => x.nodeId === n.id);
+  const add = h('input', {
+    placeholder: 'Jot an idea for this block (Enter)',
+    onkeydown: (e) => {
+      if (e.key !== 'Enter' || !e.target.value.trim()) return;
+      newNote(e.target.value.trim(), { nodeId: n.id });
+      changed();
+      renderInspectorOnly();
+      document.querySelector('.ideas input')?.focus();
+    },
+  });
+  return h('section', { class: 'panel ideas' },
+    h('div', { class: 'panel-head row-head' },
+      h('span', { class: 'eyebrow' }, icon('note'), ` Ideas for this block${ideas.length ? ` · ${ideas.length}` : ''}`),
+      ideas.length > 0 && h('button', { class: 'link', onclick: () => { state.view = 'notebook'; state.noteScope = 'attached'; render(); } }, 'In notebook')),
+    ideas.length > 0 && h('ul', { class: 'idea-list' }, ideas.map((x) => h('li', { class: `c-${x.color}` },
+      autoGrow(h('textarea', { rows: 1, value: x.text, 'aria-label': 'Idea', oninput: (e) => { x.text = e.target.value; changed(); } })),
+      x.source && h('span', { class: 'chip src' }, SOURCES[x.source]),
+      h('button', { class: 'icon-btn small', title: 'Delete idea', onclick: () => deleteNote(x.id) }, icon('close'))))),
+    add);
 }
 
 // ---- render: inspector (right) ----------------------------------------------------
@@ -905,8 +1440,11 @@ function renderInspectorOnly() {
 function renderInspector() {
   const n = sel();
   const isRoot = n.id === 'root';
+  if (state.view === 'notebook') return h('aside', { class: 'inspector' }, renderSpark(n));
   return h('aside', { class: 'inspector' },
     isRoot ? null : inspectorBlock(n),
+    isRoot ? null : renderIdeasFor(n),
+    renderSpark(n),
     renderAssistant(n),
   );
 }
@@ -982,8 +1520,7 @@ async function runAI(id, action, fn) {
     const out = await fn();
     state.aiResults[id] = typeof out === 'string' ? { action, html: AI.renderMarkdown(out) } : { action, data: out };
   } catch (e) {
-    const msg = e?.status === 401 ? 'Your API key was rejected. Check it in Settings.' : e.message || String(e);
-    state.aiResults[id] = { action, error: msg };
+    state.aiResults[id] = { action, error: aiError(e) };
   }
   if (state.selectedId === id) renderInspectorOnly();
 }

@@ -226,17 +226,129 @@
     {
       "id": "n1",
       "text": "What if the ledger isn’t Avó’s handwriting at the end? Someone else kept it going: Tomás?",
-      "createdAt": "2026-09-20T10:00:00.000Z"
+      "createdAt": "2026-09-20T10:00:00.000Z",
+      "x": 80,
+      "y": 130,
+      "color": "yellow",
+      "nodeId": "s3",
+      "source": null
     },
     {
       "id": "n2",
       "text": "“Salt doesn’t grow. It’s what’s left when the water gives up.” (Tomás, maybe in Ch. 3?)",
-      "createdAt": "2026-09-22T10:00:00.000Z"
+      "createdAt": "2026-09-22T10:00:00.000Z",
+      "x": 460,
+      "y": 130,
+      "color": "green",
+      "nodeId": "c3",
+      "source": null
     },
     {
       "id": "n3",
       "text": "Scene idea: Ines tries to sell a bag of fleur de sel at the mainland market and nobody believes the price.",
-      "createdAt": "2026-09-24T10:00:00.000Z"
+      "createdAt": "2026-09-24T10:00:00.000Z",
+      "x": 840,
+      "y": 130,
+      "color": "peach",
+      "nodeId": null,
+      "source": null
+    },
+    {
+      "id": "l1",
+      "text": "The ledger",
+      "createdAt": "2026-09-25T10:00:00.000Z",
+      "color": "label",
+      "nodeId": null,
+      "source": null,
+      "x": 80,
+      "y": 60
+    },
+    {
+      "id": "l2",
+      "text": "Salt as metaphor",
+      "createdAt": "2026-09-25T10:00:00.000Z",
+      "color": "label",
+      "nodeId": null,
+      "source": null,
+      "x": 460,
+      "y": 60
+    },
+    {
+      "id": "n4",
+      "text": "Each harvest entry has the weather, the yield, and one line that isn’t about salt at all.",
+      "createdAt": "2026-09-25T10:00:00.000Z",
+      "color": "yellow",
+      "nodeId": "s3",
+      "source": null,
+      "x": 80,
+      "y": 380
+    },
+    {
+      "id": "n5",
+      "text": "Tomás never writes anything down. He remembers the yields by the year’s disasters.",
+      "createdAt": "2026-09-25T10:00:00.000Z",
+      "color": "blue",
+      "nodeId": "s4",
+      "source": null,
+      "x": 80,
+      "y": 610
+    },
+    {
+      "id": "n6",
+      "text": "Evaporation, what remains when something leaves. Use it once, and never name it.",
+      "createdAt": "2026-09-25T10:00:00.000Z",
+      "color": "green",
+      "nodeId": null,
+      "source": null,
+      "x": 460,
+      "y": 380
+    },
+    {
+      "id": "l3",
+      "text": "Mainland vs island",
+      "createdAt": "2026-09-25T10:00:00.000Z",
+      "color": "label",
+      "nodeId": null,
+      "source": null,
+      "x": 840,
+      "y": 60
+    },
+    {
+      "id": "n7",
+      "text": "Ines’s mainland job: something with screens and metrics. She measures everything; Avó measured by taste.",
+      "createdAt": "2026-09-25T10:00:00.000Z",
+      "color": "peach",
+      "nodeId": null,
+      "source": null,
+      "x": 840,
+      "y": 380
+    }
+  ],
+  "links": [
+    {
+      "id": "k1",
+      "from": "n1",
+      "to": "n4"
+    },
+    {
+      "id": "k2",
+      "from": "n4",
+      "to": "n5"
+    },
+    {
+      "id": "k3",
+      "from": "n2",
+      "to": "n6"
+    },
+    {
+      "id": "k4",
+      "from": "n3",
+      "to": "n7"
+    },
+    {
+      "id": "k5",
+      "from": "n7",
+      "to": "n4"
     }
   ]
 }

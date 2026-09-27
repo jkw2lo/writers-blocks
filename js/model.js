@@ -60,7 +60,27 @@ export function newProject(title = 'Untitled Book') {
     updatedAt: now(),
     nodes: { root, [part.id]: part, [chapter.id]: chapter, [section.id]: section },
     notebook: [],
+    links: [],
   };
+}
+
+// ---- notebook ideas ----------------------------------------------------------
+
+export const NOTE_COLORS = ['yellow', 'peach', 'green', 'blue', 'lilac', 'label'];
+
+export function makeNote(text, extra = {}) {
+  return { id: uid(), text, createdAt: now(), color: 'yellow', nodeId: null, source: null, x: null, y: null, ...extra };
+}
+
+export function removeNote(p, id) {
+  p.notebook = p.notebook.filter((n) => n.id !== id);
+  p.links = p.links.filter((l) => l.from !== id && l.to !== id);
+}
+
+export function linkNotes(p, a, b) {
+  if (a === b || p.links.some((l) => (l.from === a && l.to === b) || (l.from === b && l.to === a))) return false;
+  p.links.push({ id: uid(), from: a, to: b });
+  return true;
 }
 
 export function validate(p) {
@@ -68,6 +88,11 @@ export function validate(p) {
     throw new Error("This doesn't look like a Writers Blocks project file.");
   }
   p.notebook ||= [];
+  p.links ||= [];
+  p.notebook.forEach((n, i) => {
+    n.color ||= ['yellow', 'peach', 'green'][i % 3];
+    n.nodeId ??= null;
+  });
   for (const n of Object.values(p.nodes)) {
     n.children ||= [];
     n.tags ||= [];
@@ -151,6 +176,7 @@ export function deleteNode(p, id) {
   const drop = (nid) => {
     for (const c of p.nodes[nid]?.children || []) drop(c);
     delete p.nodes[nid];
+    for (const note of p.notebook) if (note.nodeId === nid) note.nodeId = null;
   };
   drop(id);
 }

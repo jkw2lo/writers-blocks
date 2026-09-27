@@ -12,10 +12,24 @@ A writing workspace for long-form work (novels, memoir, long stories, essay coll
   - **Write**: a distraction-light editor. Above it you see the block's direction, where it sits (breadcrumbs), and the blocks just before and after it, so you always know what you're writing *toward*.
   - **Board**: index cards for the pieces of a part or chapter. Drag to reorder, and edit synopses right on the card.
   - **Outline**: the whole book as a table. Read down "What happens" to check the story holds together; read down "Why it's here" to check every piece earns its place.
-  - **Notebook**: loose fragments and ideas with no home yet. Drag one onto the outline (or use *Place in book*) and it becomes a block.
+  - **Notebook**: loose fragments and ideas with no home yet, as a **Grid** or a spatial **Canvas** (see *Brainstorming*). Drag an idea onto the outline (or use *Make it a block*) and it becomes a block.
 - **Restructure freely**: drag blocks anywhere in the left-hand outline (before, after, or *into* another block), **split** a block at the cursor, **merge** a block with the next one, and undo structural changes.
 - **Break it down**: every part and chapter shows its pieces and word counts, so a book becomes a list of sections you can write one sitting at a time.
 - **Focus mode** (`⌘/Ctrl + .`), light/dark themes, and Markdown export of the manuscript (with or without synopses).
+
+## Brainstorming
+
+Tools for generating material, not just organizing it. They all live in the **Brainstorm** panel on the right, and everything they produce lands in the Notebook, tagged with where it came from.
+
+- **Canvas**: spread ideas out like sticky notes on a wall. Double-click to add, drag to arrange, colour-code, make *label* notes to name clusters, and drag the link handle from one note to another to connect them.
+- **Deal a prompt**: a deck of about 50 prompts (what ifs, character, stakes, senses & place, structure, play & constraint, argument), phrased around whichever block you're on.
+- **Freewrite**: a timed sprint (5–20 min) with an optional "no deleting" mode. Whatever you write is saved to the notebook, attached to the block you started from.
+- **Collide**: two random ideas from your notebook side by side. Write how they connect and the connection is saved, linked to both.
+- **Ideas for this block**: ideas can be attached to a block. They show up beside the draft in the Write view, and you can jot new ones there.
+- With the AI assistant on:
+  - **What if…?**: eight possibilities for the block or book, from grounded to wild. Keep the ones you like.
+  - **Interview me**: five questions only you can answer. Your answers become ideas.
+  - **Riff** (✦ on any note): spins off five variations of an idea, linked to it on the canvas.
 
 ## Where your writing lives
 
