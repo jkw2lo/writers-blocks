@@ -1,0 +1,242 @@
+{
+  "format": "writers-blocks",
+  "version": 1,
+  "author": "A. Writer (sample)",
+  "targetWords": 85000,
+  "createdAt": "2026-09-01T09:00:00.000Z",
+  "updatedAt": "2026-09-26T09:00:00.000Z",
+  "nodes": {
+    "root": {
+      "id": "root",
+      "type": "book",
+      "title": "The Salt Year",
+      "synopsis": "After her grandmother dies, Ines returns to the island saltworks she fled at seventeen, meaning to sell it by autumn. One harvest season later she has to decide what she owes the place, and what it has cost the people who stayed.",
+      "purpose": "What we inherit versus what we choose; how slow, repetitive work can be a form of grief, and of love.",
+      "notes": "",
+      "content": "",
+      "status": "idea",
+      "targetWords": 0,
+      "tags": [],
+      "children": [
+        "p1",
+        "p2",
+        "p3"
+      ],
+      "collapsed": false
+    },
+    "p1": {
+      "id": "p1",
+      "type": "part",
+      "title": "Part One: Brine",
+      "synopsis": "Ines arrives, takes stock, and plans to leave.",
+      "purpose": "Establish the island, the work, and the lie Ines tells herself: that she is only passing through.",
+      "notes": "",
+      "content": "",
+      "status": "drafting",
+      "targetWords": 0,
+      "tags": [],
+      "children": [
+        "c1",
+        "c2"
+      ],
+      "collapsed": false
+    },
+    "c1": {
+      "id": "c1",
+      "type": "chapter",
+      "title": "1. The Crossing",
+      "synopsis": "The ferry, the first sight of the pans, the empty house.",
+      "purpose": "Open on motion and dread; plant the sale as her stated goal.",
+      "notes": "",
+      "content": "",
+      "status": "drafting",
+      "targetWords": 4000,
+      "tags": [],
+      "children": [
+        "s1",
+        "s2",
+        "s3"
+      ],
+      "collapsed": false
+    },
+    "s1": {
+      "id": "s1",
+      "type": "section",
+      "title": "Ferry at dawn",
+      "synopsis": "Ines on the early ferry, rehearsing what she will say to the estate agent.",
+      "purpose": "Hook: a clear want (sell, leave) and a hint of why she left.",
+      "notes": "",
+      "content": "<p>The ferry left before the light did, which suited Ines. She stood at the rail with her collar up and practised the sentence she would say to the agent on Monday: <em>I’m not in a position to keep it.</em> It sounded reasonable. It sounded like someone else.</p><p>Behind her the mainland shrank into a line of sodium lamps. Ahead there was nothing yet, only the smell, which arrived before the island did: iodine and wet stone and, underneath it, something clean and mineral that she had spent eleven years trying not to miss.</p><p>A boy in a school jumper was feeding crisps to a gull that did not deserve them. She watched him until he noticed, then looked away.</p>",
+      "status": "revising",
+      "targetWords": 1200,
+      "tags": [],
+      "children": [],
+      "collapsed": false
+    },
+    "s2": {
+      "id": "s2",
+      "type": "section",
+      "title": "The pans from the road",
+      "synopsis": "First view of the saltworks, neglected but not dead.",
+      "purpose": "Show the place as a character; set up how much work the harvest will take.",
+      "notes": "",
+      "content": "<p>The pans lay in their grid below the road like a board game someone had abandoned mid-move. Half of them were green with weed. The rest held a skin of water so still it looked painted on.</p>",
+      "status": "drafting",
+      "targetWords": 1400,
+      "tags": [],
+      "children": [],
+      "collapsed": false
+    },
+    "s3": {
+      "id": "s3",
+      "type": "section",
+      "title": "Grandmother’s kitchen",
+      "synopsis": "Ines enters the house and finds the harvest ledger left open.",
+      "purpose": "The ledger is the inciting object: Avó expected her to come, and to stay.",
+      "notes": "",
+      "content": "",
+      "status": "outlined",
+      "targetWords": 1400,
+      "tags": [],
+      "children": [],
+      "collapsed": false
+    },
+    "c2": {
+      "id": "c2",
+      "type": "chapter",
+      "title": "2. Terms",
+      "synopsis": "Meeting Tomás, who has kept the pans going; the agent’s valuation.",
+      "purpose": "Introduce the central relationship and the conflict of interest: he needs the works to survive.",
+      "notes": "",
+      "content": "",
+      "status": "outlined",
+      "targetWords": 0,
+      "tags": [],
+      "children": [
+        "s4",
+        "s5"
+      ],
+      "collapsed": false
+    },
+    "s4": {
+      "id": "s4",
+      "type": "section",
+      "title": "Tomás at the sluice",
+      "synopsis": "Tomás is already working when she arrives at six.",
+      "purpose": "He is not a love interest; he is the person who stayed. Make that sting.",
+      "notes": "",
+      "content": "",
+      "status": "outlined",
+      "targetWords": 0,
+      "tags": [],
+      "children": [],
+      "collapsed": false
+    },
+    "s5": {
+      "id": "s5",
+      "type": "section",
+      "title": "The valuation",
+      "synopsis": "The agent names a number that would change her life.",
+      "purpose": "Raise the stakes on leaving.",
+      "notes": "",
+      "content": "",
+      "status": "idea",
+      "targetWords": 0,
+      "tags": [],
+      "children": [],
+      "collapsed": false
+    },
+    "p2": {
+      "id": "p2",
+      "type": "part",
+      "title": "Part Two: Harvest",
+      "synopsis": "The summer of work. Ines is pulled into the rhythm despite herself.",
+      "purpose": "The middle should feel like the work: repetitive, physical, slowly transforming.",
+      "notes": "",
+      "content": "",
+      "status": "outlined",
+      "targetWords": 0,
+      "tags": [],
+      "children": [
+        "c3",
+        "c4"
+      ],
+      "collapsed": false
+    },
+    "c3": {
+      "id": "c3",
+      "type": "chapter",
+      "title": "3. Raking",
+      "synopsis": "Ines’s first full day raking salt; her body remembers.",
+      "purpose": "Muscle memory as the first crack in her resolve.",
+      "notes": "",
+      "content": "",
+      "status": "outlined",
+      "targetWords": 0,
+      "tags": [],
+      "children": [],
+      "collapsed": false
+    },
+    "c4": {
+      "id": "c4",
+      "type": "chapter",
+      "title": "4. The Storm Tide",
+      "synopsis": "A summer storm threatens the crop; everyone on the island turns out.",
+      "purpose": "Midpoint: she chooses the pans over the agent’s deadline, without admitting it.",
+      "notes": "",
+      "content": "",
+      "status": "idea",
+      "targetWords": 0,
+      "tags": [],
+      "children": [],
+      "collapsed": false
+    },
+    "p3": {
+      "id": "p3",
+      "type": "part",
+      "title": "Part Three: Crystal",
+      "synopsis": "Autumn. The sale, the ledger’s last page, and her decision.",
+      "purpose": "Resolve inheritance vs choice without a tidy bow.",
+      "notes": "",
+      "content": "",
+      "status": "idea",
+      "targetWords": 0,
+      "tags": [],
+      "children": [
+        "c5"
+      ],
+      "collapsed": false
+    },
+    "c5": {
+      "id": "c5",
+      "type": "chapter",
+      "title": "5. The Last Page",
+      "synopsis": "Ines reads what Avó wrote in the ledger’s final entry.",
+      "purpose": "Emotional climax; reframe the whole book.",
+      "notes": "",
+      "content": "",
+      "status": "idea",
+      "targetWords": 0,
+      "tags": [],
+      "children": [],
+      "collapsed": false
+    }
+  },
+  "notebook": [
+    {
+      "id": "n1",
+      "text": "What if the ledger isn’t Avó’s handwriting at the end? Someone else kept it going: Tomás?",
+      "createdAt": "2026-09-20T10:00:00.000Z"
+    },
+    {
+      "id": "n2",
+      "text": "“Salt doesn’t grow. It’s what’s left when the water gives up.” (Tomás, maybe in Ch. 3?)",
+      "createdAt": "2026-09-22T10:00:00.000Z"
+    },
+    {
+      "id": "n3",
+      "text": "Scene idea: Ines tries to sell a bag of fleur de sel at the mainland market and nobody believes the price.",
+      "createdAt": "2026-09-24T10:00:00.000Z"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+.DS_Store
+*.wblocks.json
+!examples/*.wblocks.json
+.claude/settings.local.json
