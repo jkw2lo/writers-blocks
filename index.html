@@ -8,10 +8,18 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='17' width='12' height='12' rx='2' fill='%23b4532a'/><rect x='17' y='17' width='12' height='12' rx='2' fill='%23d9a441'/><rect x='10' y='3' width='12' height='12' rx='2' fill='%234f6d5a'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=Geist:wght@400;500;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Special+Elite&family=IBM+Plex+Mono:wght@400;500;600&family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Cormorant+Garamond:wght@500;600&family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,500,100,1;1,9..144,500,100,1&family=Lora:ital,wght@0,400;0,600;1,400&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/themes.css">
   <script>
-    try { const t = localStorage.getItem('wb-theme'); if (t && t !== 'auto') document.documentElement.dataset.theme = t; } catch {}
+    // Apply skin + light/dark before first paint (app.js keeps these in sync afterwards).
+    (() => {
+      let p = {};
+      try { p = JSON.parse(localStorage.getItem('wb-prefs') || '{}'); } catch {}
+      const d = document.documentElement, skin = p.skin || 'studio', theme = p.theme || 'auto';
+      const dark = skin === 'nocturne' || theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+      d.dataset.skin = skin; d.dataset.mode = dark ? 'dark' : 'light';
+    })();
   </script>
 </head>
 <body>

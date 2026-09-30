@@ -15,7 +15,13 @@ A writing workspace for long-form work (novels, memoir, long stories, essay coll
   - **Notebook**: loose fragments and ideas with no home yet, as a **Grid** or a spatial **Canvas** (see *Brainstorming*). Drag an idea onto the outline (or use *Make it a block*) and it becomes a block.
 - **Restructure freely**: drag blocks anywhere in the left-hand outline (before, after, or *into* another block), **split** a block at the cursor, **merge** a block with the next one, and undo structural changes.
 - **Break it down**: every part and chapter shows its pieces and word counts, so a book becomes a list of sections you can write one sitting at a time.
-- **Focus mode** (`⌘/Ctrl + .`), light/dark themes, and Markdown export of the manuscript (with or without synopses).
+- **Skins for your vibe** (the palette icon in the top bar, or Settings), each with light and dark modes:
+  - **Studio**: warm paper and a bookish serif (the original look)
+  - **Minimal**: sleek, modern and quiet, all Geist
+  - **Typewriter**: grainy paper, Courier, ribbon red, your draft typed onto a sheet with a margin rule
+  - **Nocturne**: 2am and candlelit, Garamond with drop caps (always dark)
+  - **Meadow**: soft and cosy, with Fraunces, Lora, sage and rose
+- **Focus mode** (`⌘/Ctrl + .`) and Markdown export of the manuscript (with or without synopses).
 
 ## Brainstorming
 
@@ -38,7 +44,7 @@ Tools for generating material, not just organizing it. They all live in the **Br
 - **Chrome, Edge, Arc, Brave**: pick the file once and the app **autosaves to it** as you type (via the File System Access API). Writes are atomic, so a crash mid-save can't corrupt the file.
 - **Safari, Firefox**: these browsers can't write to your disk directly, so use *Download to save* and *Open…* the file next time.
 
-The browser keeps only small conveniences: your theme, text size, and on Chromium a *handle* pointing to your last file, so "Reopen" works. That handle holds no text, and the browser asks your permission before the app can read the file again. Use **File → Download a backup copy** now and then, or keep the project file in a synced or versioned folder.
+The browser keeps only small conveniences: your skin and light/dark choice, text size, and on Chromium a *handle* pointing to your last file, so "Reopen" works. That handle holds no text, and the browser asks your permission before the app can read the file again. Use **File → Download a backup copy** now and then, or keep the project file in a synced or versioned folder.
 
 ## Optional AI assistant
 
@@ -75,7 +81,8 @@ Then open http://localhost:5173. (Opening `index.html` directly as a `file://` U
 
 ```
 index.html              app shell
-css/styles.css          all styles (light/dark tokens at the top)
+css/styles.css          all styles (design tokens for the default skin at the top)
+css/themes.css          the other skins: token overrides + signature touches
 js/app.js               UI: views, drag & drop, commands, settings
 js/model.js             the book data model (tree ops, word counts, export)
 js/storage.js           saving/opening files on your disk

@@ -31,7 +31,7 @@ const state = {
 // Per-device preferences only (never manuscript data).
 const prefs = loadPrefs();
 function loadPrefs() {
-  const d = { theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10 };
+  const d = { skin: 'studio', theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10 };
   try { return { ...d, ...JSON.parse(localStorage.getItem('wb-prefs') || '{}') }; } catch { return d; }
 }
 function savePrefs() {
@@ -39,7 +39,6 @@ function savePrefs() {
     const out = { ...prefs };
     if (!out.rememberKey) out.apiKey = '';
     localStorage.setItem('wb-prefs', JSON.stringify(out));
-    localStorage.setItem('wb-theme', prefs.theme);
   } catch { /* storage may be unavailable; prefs just won't persist */ }
 }
 let sessionKey = prefs.apiKey || '';
@@ -88,6 +87,9 @@ const ICONS = {
   link: 'M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1',
   bulb: 'M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0012 3z',
   close: 'M6 6l12 12M18 6L6 18',
+  palette: 'M12 3a9 9 0 000 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.8-1.7 1.7-1.7H16a5 5 0 005-5c0-4-4-7.4-9-7.4zM7.5 12.5h.01M9.5 8h.01M14.5 8h.01M17 11.5h.01',
+  sun: 'M12 16a4 4 0 100-8 4 4 0 000 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+  moon: 'M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z',
 };
 function icon(name, cls = '') {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -101,6 +103,8 @@ function icon(name, cls = '') {
 function autoGrow(el) {
   const fit = () => { el.style.height = 'auto'; el.style.height = `${el.scrollHeight + 2}px`; };
   el.addEventListener('input', fit);
+  el.dataset.autogrow = '';
+  el.fit = fit;
   requestAnimationFrame(fit);
   return el;
 }
@@ -471,6 +475,9 @@ function renderWelcome() {
           h('button', { class: 'btn', onclick: cmdOpen }, 'Open a project file…'),
           h('button', { class: 'btn ghost', onclick: cmdSample }, 'Explore a sample'),
         ),
+        h('div', { class: 'vibe' },
+          h('span', { class: 'eyebrow' }, 'Pick a vibe'),
+          skinPicker({ compact: true })),
         h('p', { class: 'fine' },
           S.canAutosave
             ? 'Your work is saved to a file on your computer that you choose, and it autosaves as you write. Nothing is kept in the browser.'
@@ -497,6 +504,7 @@ function renderTopbar() {
       }, label))),
     h('div', { class: 'spacer' }),
     h('div', { id: 'status', class: 'status' }),
+    lookMenu(),
     h('button', { class: 'icon-btn', title: 'Focus mode (Ctrl/⌘ + .)', onclick: toggleFocus }, icon('focus')),
     h('button', { class: 'icon-btn', title: 'Settings', onclick: openSettings }, icon('gear')),
   );
@@ -1576,10 +1584,9 @@ function openSettings() {
   dlg.append(
     h('div', { class: 'dlg-head' }, h('h2', null, 'Settings'), h('button', { class: 'icon-btn', onclick: close, title: 'Close' }, icon('close'))),
     h('h3', null, 'Appearance'),
+    skinPicker(),
     h('div', { class: 'kv' },
-      h('label', null, 'Theme'),
-      h('select', { onchange: (e) => { prefs.theme = e.target.value; savePrefs(); applyTheme(); } },
-        [['auto', 'Match system'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => h('option', { value: v, selected: prefs.theme === v }, l))),
+      h('label', null, 'Mode'), modeControl(),
       h('label', null, 'Text size'),
       h('input', { type: 'range', min: 15, max: 24, value: prefs.fontSize, oninput: (e) => { prefs.fontSize = +e.target.value; savePrefs(); document.documentElement.style.setProperty('--editor-size', `${prefs.fontSize}px`); } })),
     h('h3', null, 'AI assistant ', h('span', { class: 'muted small' }, '(optional)')),
@@ -1606,9 +1613,69 @@ function openSettings() {
   dlg.showModal();
 }
 
-function applyTheme() {
-  if (prefs.theme === 'auto') delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = prefs.theme;
+// ---- skins ---------------------------------------------------------------------------
+// Tokens and signature touches live in css/themes.css; these swatches only draw the picker.
+
+const SKINS = [
+  { id: 'studio', name: 'Studio', vibe: 'Warm paper, bookish serif', bg: '#f5f0e6', card: '#fffdf8', ink: '#2a2520', accent: '#b4532a', font: "'Literata', serif" },
+  { id: 'minimal', name: 'Minimal', vibe: 'Sleek, modern, quiet', bg: '#fafafa', card: '#ffffff', ink: '#0a0a0b', accent: '#111113', font: "'Geist', sans-serif" },
+  { id: 'typewriter', name: 'Typewriter', vibe: 'Inked paper, ribbon red', bg: '#e6dfcd', card: '#f7f2e4', ink: '#211f1b', accent: '#b0302a', font: "'Special Elite', monospace" },
+  { id: 'nocturne', name: 'Nocturne', vibe: '2am, candlelit. Always dark', bg: '#0d1019', card: '#141925', ink: '#ebe4d6', accent: '#e8ae5b', font: "'Cormorant Garamond', serif", dark: true },
+  { id: 'meadow', name: 'Meadow', vibe: 'Soft, cosy, a little dreamy', bg: '#f4f2e8', card: '#fffdf7', ink: '#2c3327', accent: '#c25e68', font: "'Fraunces', serif" },
+];
+const skinOf = () => SKINS.find((k) => k.id === prefs.skin) || SKINS[0];
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+
+function applyTheme(animate = false) {
+  const d = document.documentElement;
+  const dark = skinOf().dark || prefs.theme === 'dark' || (prefs.theme === 'auto' && darkQuery.matches);
+  if (animate) {
+    d.classList.add('skin-switching');
+    clearTimeout(applyTheme.t);
+    applyTheme.t = setTimeout(() => d.classList.remove('skin-switching'), 400);
+  }
+  d.dataset.skin = skinOf().id;
+  d.dataset.mode = dark ? 'dark' : 'light';
+  requestAnimationFrame(refitTextareas);
+  document.querySelectorAll('.skin-opt').forEach((b) => b.classList.toggle('on', b.dataset.skin === prefs.skin));
+  document.querySelectorAll('.mode-control').forEach((c) => c.replaceWith(modeControl()));
+}
+darkQuery.addEventListener('change', () => applyTheme(true));
+// A new skin brings new fonts: re-measure auto-growing textareas when they arrive.
+const refitTextareas = () => document.querySelectorAll('textarea[data-autogrow]').forEach((t) => t.fit?.());
+document.fonts?.addEventListener('loadingdone', refitTextareas);
+
+function setSkin(id) { prefs.skin = id; savePrefs(); applyTheme(true); }
+
+function skinPicker({ compact = false } = {}) {
+  return h('div', { class: `skin-picker ${compact ? 'compact' : ''}`, role: 'radiogroup', 'aria-label': 'Skin' },
+    SKINS.map((k) => h('button', {
+      class: `skin-opt ${prefs.skin === k.id ? 'on' : ''}`, 'data-skin': k.id, role: 'radio', title: k.vibe,
+      'aria-checked': String(prefs.skin === k.id),
+      onclick: () => setSkin(k.id),
+    },
+      h('span', { class: 'skin-swatch', style: `--sw-bg:${k.bg};--sw-card:${k.card};--sw-ink:${k.ink};--sw-accent:${k.accent};--sw-font:${k.font}` },
+        h('span', { class: 'sw-card' }, h('b', null, 'Aa'), h('i'), h('i'))),
+      h('span', { class: 'skin-name' }, k.name),
+      !compact && h('span', { class: 'skin-vibe' }, k.vibe))));
+}
+
+function modeControl() {
+  const forced = skinOf().dark;
+  return h('div', { class: 'seg-control mode-control', title: forced ? `${skinOf().name} is always dark` : '' },
+    [['auto', 'Auto'], ['light', 'Light', 'sun'], ['dark', 'Dark', 'moon']].map(([v, l, ic]) => h('button', {
+      class: prefs.theme === v && !forced ? 'active' : '', disabled: forced,
+      onclick: () => { prefs.theme = v; savePrefs(); applyTheme(true); },
+    }, ic && icon(ic), l)));
+}
+
+function lookMenu() {
+  return h('details', { class: 'menu look' },
+    h('summary', { class: 'icon-btn', title: 'Look & feel' }, icon('palette')),
+    h('div', { class: 'menu-pop right look-pop' },
+      h('div', { class: 'eyebrow' }, 'Skin'),
+      skinPicker(),
+      h('div', { class: 'look-foot' }, h('span', { class: 'eyebrow' }, 'Mode'), modeControl())));
 }
 
 function toggleFocus() {
@@ -1626,6 +1693,11 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); state.handle ? save() : saveAs(); }
   if (mod && e.key === '.') { e.preventDefault(); toggleFocus(); }
   if (e.key === 'Escape' && state.focus) toggleFocus();
+});
+
+// Close popover menus on an outside click.
+document.addEventListener('click', (e) => {
+  document.querySelectorAll('details.menu[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
 });
 
 window.addEventListener('beforeunload', (e) => {
