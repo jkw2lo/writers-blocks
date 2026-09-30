@@ -2,6 +2,8 @@ import * as M from './model.js';
 import * as S from './storage.js';
 import * as AI from './ai.js';
 import { dealPrompt } from './prompts.js';
+import * as Sound from './sound.js';
+import { confetti } from './celebrate.js';
 
 // ---- state -------------------------------------------------------------------
 
@@ -28,12 +30,14 @@ const state = {
   noteScope: 'all',
   canvasScroll: null,
   recent: null,
+  session: null, // this sitting's progress: see startSession()
 };
 
 // Per-device preferences only (never manuscript data).
 const prefs = loadPrefs();
 function loadPrefs() {
-  const d = { skin: 'studio', theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10 };
+  const d = { skin: 'studio', type: {}, typeCss: null, theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10,
+    sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
   try { return { ...d, ...JSON.parse(localStorage.getItem('wb-prefs') || '{}') }; } catch { return d; }
 }
 function savePrefs() {
@@ -92,6 +96,9 @@ const ICONS = {
   palette: 'M12 3a9 9 0 000 18c1.1 0 1.7-.8 1.7-1.7 0-.5-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.8-1.7 1.7-1.7H16a5 5 0 005-5c0-4-4-7.4-9-7.4zM7.5 12.5h.01M9.5 8h.01M14.5 8h.01M17 11.5h.01',
   sun: 'M12 16a4 4 0 100-8 4 4 0 000 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
   moon: 'M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z',
+  sound: 'M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13',
+  center: 'M4 12h16M8 6h8M8 18h8M2 9v6M22 9v6',
+  fade: 'M4 6h10M4 12h16M4 18h8',
 };
 function icon(name, cls = '') {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -118,13 +125,13 @@ const textToHtml = (t) =>
     .map((para) => `<p>${escapeHtml(para).replace(/\n/g, '<br>')}</p>`).join('');
 
 let toastTimer;
-function toast(msg, { undo = false, error = false } = {}) {
+function toast(msg, { undo = false, error = false, cheer = false } = {}) {
   const t = document.getElementById('toast');
-  t.replaceChildren(h('span', null, msg));
-  t.className = `show ${error ? 'error' : ''}`;
+  t.replaceChildren(cheer ? h('span', { class: 'cheer-icon' }, icon('spark')) : '', h('span', null, msg));
+  t.className = `show ${error ? 'error' : ''} ${cheer ? 'cheer' : ''}`;
   if (undo) t.append(h('button', { class: 'link', onclick: () => { restoreUndo(); t.className = ''; } }, 'Undo'));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.className = ''), undo ? 7000 : 3500);
+  toastTimer = setTimeout(() => (t.className = ''), undo || cheer ? 6000 : 3500);
 }
 
 // ---- undo for structural changes ---------------------------------------------
@@ -221,6 +228,7 @@ function loadProject(text, { handle = null, name = null, stamp = null, keepPlace
   state.undo = [];
   state.aiResults = {};
   state.spark = null;
+  if (!keepPlace) startSession();
   render();
 }
 
@@ -243,6 +251,7 @@ async function cmdNew() {
   state.spark = null;
   state.selectedId = 'root';
   state.dirty = true;
+  startSession();
   render();
   if (S.canAutosave) await saveAs();
 }
@@ -341,6 +350,242 @@ async function reloadFromDisk() {
     showConflict();
   }
 }
+
+// ---- progress & celebrations ------------------------------------------------------
+// Not a daily streak: just the sense of the book coming together. We keep a picture of
+// this sitting (words when it started, which blocks you worked on, what you finished)
+// and celebrate crossings as they happen: a block's word target, the book's target,
+// word-count milestones, and blocks marked Done. Nothing here is saved to the file.
+
+const MILESTONES = [
+  [1000, '1,000 words. The first thousand are the hardest.'],
+  [2500, '2,500 words. About ten pages of a paperback.'],
+  [5000, '5,000 words, the length of a good short story.'],
+  [10000, '10,000 words. Around 40 printed pages.'],
+  [17500, '17,500 words. Novelette territory.'],
+  [25000, '25,000 words. Halfway to a NaNoWriMo novel.'],
+  [40000, '40,000 words. That’s officially novel length.'],
+  [50000, '50,000 words. The Great Gatsby is about 47,000.'],
+  [75000, '75,000 words. Right around a typical debut novel.'],
+  [100000, '100,000 words. Six figures.'],
+];
+const milestoneText = (m) => MILESTONES.find(([n]) => n === m)?.[1] || `${fmt(m)} words. Still going.`;
+function milestonesBetween(a, b) {
+  const all = [...MILESTONES.map(([n]) => n)];
+  for (let m = 125000; m <= b; m += 25000) all.push(m);
+  return all.filter((m) => a < m && m <= b);
+}
+
+function startSession() {
+  const p = P();
+  const nodeWords = {};
+  for (const { node } of M.flatten(p)) nodeWords[node.id] = M.treeWords(p, node.id);
+  const total = M.treeWords(p);
+  state.session = { start: Date.now(), baseWords: total, lastTotal: total, nodeWords, touched: new Set(), hit: new Set(), milestones: [], done: [] };
+}
+
+function trackProgress() {
+  const s = state.session;
+  if (!s || !P()) return;
+  const p = P();
+  const total = M.treeWords(p);
+  for (const m of milestonesBetween(s.lastTotal, total)) {
+    if (s.hit.has(`m${m}`)) continue;
+    s.hit.add(`m${m}`);
+    s.milestones.push(m);
+    cheer(milestoneText(m), { big: m >= 10000 });
+  }
+  if (p.targetWords && s.lastTotal < p.targetWords && total >= p.targetWords && !s.hit.has('book')) {
+    s.hit.add('book');
+    cheer(`You reached your ${fmt(p.targetWords)}-word target for the whole book!`, { big: true });
+  }
+  const n = sel();
+  if (n.id !== 'root') {
+    for (const node of [...M.ancestors(p, n.id).filter((a) => a.id !== 'root'), n]) {
+      const w = M.treeWords(p, node.id);
+      const prev = s.nodeWords[node.id] ?? w;
+      s.nodeWords[node.id] = w;
+      if (node.targetWords && prev < node.targetWords && w >= node.targetWords && !s.hit.has(node.id)) {
+        s.hit.add(node.id);
+        cheer(`“${node.title}” reached its ${fmt(node.targetWords)}-word target.`);
+      }
+    }
+  }
+  s.lastTotal = total;
+}
+
+function cheer(msg, { big = false, from = null } = {}) {
+  if (!prefs.celebrate) return;
+  toast(msg, { cheer: true });
+  const r = from?.getBoundingClientRect();
+  confetti(r ? { x: r.left + r.width / 2, y: r.top, count: big ? 160 : 70 } : { count: big ? 170 : 80 });
+  if (prefs.sounds) Sound.play('bell', prefs.soundVolume);
+}
+
+function blockDone(n, from) {
+  state.session?.done.push(n.id);
+  const leaves = M.flatten(P()).map((x) => x.node).filter((x) => !x.children.length && x.id !== 'root');
+  const done = leaves.filter((x) => x.status === 'done').length;
+  if (leaves.length > 1 && done === leaves.length) cheer('Every block is done. That’s a whole draft!', { big: true, from });
+  else cheer(`“${n.title}” is done. ${done} of ${leaves.length} blocks finished.`, { from });
+}
+
+function progressRing(words) {
+  const target = P().targetWords;
+  if (!target) return null;
+  const pct = Math.min(1, words / target);
+  const c = 2 * Math.PI * 8;
+  const ring = h('button', {
+    class: `progress-ring ${pct >= 1 ? 'full' : ''}`, 'aria-label': `Book progress: ${Math.round(pct * 100)}%`,
+    title: `${fmt(words)} of ${fmt(target)} words (${Math.round(pct * 100)}%)`,
+    onclick: () => select('root', 'write'),
+  });
+  ring.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" class="track"/><circle cx="10" cy="10" r="8" class="fill" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - pct)}"/></svg>`;
+  return ring;
+}
+
+function sessionStats() {
+  const s = state.session;
+  if (!s || !P()) return null;
+  const words = M.treeWords(P());
+  const titles = (ids) => ids.map((id) => P().nodes[id]?.title).filter(Boolean);
+  return {
+    net: words - s.baseWords,
+    minutes: Math.max(1, Math.round((Date.now() - s.start) / 60000)),
+    touched: titles([...s.touched]),
+    done: titles([...new Set(s.done)]),
+    milestones: s.milestones,
+    words,
+  };
+}
+
+function showSessionSummary({ closing = false } = {}) {
+  const st = sessionStats();
+  if (!st) return;
+  const dlg = h('dialog', { class: 'settings session' });
+  const done = () => { dlg.close(); dlg.remove(); };
+  const list = (label, items) => items.length > 0 && h('div', { class: 'session-list' },
+    h('span', { class: 'eyebrow' }, label),
+    h('p', null, items.slice(0, 6).join(', ') + (items.length > 6 ? ` and ${items.length - 6} more` : '')));
+  const time = st.minutes < 60 ? `${st.minutes} min` : `${Math.floor(st.minutes / 60)} h ${st.minutes % 60} min`;
+  dlg.append(
+    h('div', { class: 'dlg-head' },
+      h('h2', null, closing ? 'Nice work today' : 'This session'),
+      h('button', { class: 'icon-btn', onclick: done, title: 'Close' }, icon('close'))),
+    h('div', { class: 'session-stats' },
+      h('div', { class: 'stat' }, h('div', { class: 'stat-num' }, `${st.net >= 0 ? '+' : '−'}${fmt(Math.abs(st.net))}`), h('div', { class: 'stat-label' }, 'words')),
+      h('div', { class: 'stat' }, h('div', { class: 'stat-num' }, time), h('div', { class: 'stat-label' }, 'with the book open')),
+      h('div', { class: 'stat' }, h('div', { class: 'stat-num' }, fmt(st.words)), h('div', { class: 'stat-label' }, 'words in the book'))),
+    list('Worked on', st.touched),
+    list('Finished', st.done),
+    list('Milestones', st.milestones.map((m) => `${fmt(m)} words`)),
+    !st.touched.length && !st.done.length && h('p', { class: 'muted' }, 'Nothing written yet this session. The page is waiting.'),
+    h('div', { class: 'dlg-foot' }, h('button', { class: 'btn primary', onclick: done }, closing ? 'See you next time' : 'Back to writing')),
+  );
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  dlg.showModal();
+  if (closing && st.net > 0) confetti({ count: 60 });
+}
+
+function closeProject() {
+  if (!confirmDiscard()) return;
+  const st = sessionStats();
+  const hadSession = st && (st.touched.length || st.done.length || st.net > 0);
+  if (hadSession) showSessionSummary({ closing: true });
+  state.project = null;
+  state.session = null;
+  state.dirty = false;
+  render();
+}
+
+// ---- writing aids: typing sounds, typewriter scrolling, fade the rest ------------------
+
+const WRITING_TOGGLES = [
+  ['sounds', 'sound', 'Typing sounds', 'Typing sounds on', 'Typing sounds off'],
+  ['typewriterScroll', 'center', 'Typewriter scrolling: keep the line you’re on in the middle', 'Typewriter scrolling on', 'Typewriter scrolling off'],
+  ['fadeRest', 'fade', 'Fade the rest: dim every paragraph but the one you’re writing', 'Fading the rest', 'Showing everything'],
+];
+
+function setWritingPref(key, on) {
+  prefs[key] = on;
+  savePrefs();
+  document.querySelectorAll('.editor').forEach((ed) => ed.classList.toggle('fade-rest', prefs.fadeRest));
+  document.querySelectorAll('.write').forEach((w) => w.classList.toggle('tw-scroll', prefs.typewriterScroll));
+  document.querySelectorAll(`[data-toggle="${key}"]`).forEach((b) => { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+  const ed = document.querySelector('.editor');
+  if (ed) followCaret(ed);
+  if (key === 'sounds' && on) Sound.play('bell', prefs.soundVolume);
+}
+
+function writingToggles() {
+  return h('div', { class: 'tb-toggles' },
+    WRITING_TOGGLES.map(([key, ic, title, onMsg, offMsg]) => h('button', {
+      class: `tb toggle ${prefs[key] ? 'on' : ''}`, title, 'aria-pressed': String(!!prefs[key]), 'data-toggle': key,
+      onmousedown: (e) => e.preventDefault(), // keep the cursor in the draft
+      onclick: () => { setWritingPref(key, !prefs[key]); toast(prefs[key] ? onMsg : offMsg); },
+    }, icon(ic))));
+}
+
+// The top-level paragraph the caret is in (the editor's direct child), or null.
+function caretBlock(ed) {
+  const sel = getSelection();
+  if (!sel.rangeCount || !ed.contains(sel.anchorNode)) return null;
+  let node = sel.anchorNode;
+  if (node === ed) return ed.children[Math.min(sel.anchorOffset, ed.children.length - 1)] || null;
+  while (node && node.parentNode !== ed) node = node.parentNode;
+  return node?.nodeType === 1 ? node : null;
+}
+
+// Fade: highlight the current paragraph with a generated rule, so nothing is ever
+// written into the draft's own HTML.
+const fadeStyle = document.head.appendChild(document.createElement('style'));
+function updateFade(ed) {
+  const block = prefs.fadeRest ? caretBlock(ed) : null;
+  ed.classList.toggle('fading', !!block);
+  fadeStyle.textContent = block ? `.editor.fade-rest.fading > :nth-child(${[...ed.children].indexOf(block) + 1}) { opacity: 1; }` : '';
+}
+
+function caretRect(ed) {
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0).cloneRange();
+  r.collapse(true);
+  const rect = r.getClientRects()[0];
+  if (rect && rect.height) return rect;
+  return caretBlock(ed)?.getBoundingClientRect() || null; // empty line: use its paragraph
+}
+
+function scrollParent(el) {
+  for (let n = el.parentElement; n; n = n.parentElement) {
+    const oy = getComputedStyle(n).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n;
+  }
+  return document.scrollingElement;
+}
+
+function followCaret(ed) {
+  updateFade(ed);
+  if (!prefs.typewriterScroll || document.activeElement !== ed) return;
+  const rect = caretRect(ed);
+  if (!rect) return;
+  const sc = scrollParent(ed);
+  const box = sc === document.scrollingElement ? { top: 0, height: innerHeight } : sc.getBoundingClientRect();
+  const delta = rect.top + rect.height / 2 - (box.top + box.height * 0.45);
+  if (Math.abs(delta) > 3) sc.scrollBy({ top: delta, behavior: Math.abs(delta) > 120 ? 'smooth' : 'auto' });
+}
+document.addEventListener('selectionchange', () => {
+  const ed = document.activeElement;
+  if (ed?.classList?.contains('editor')) updateFade(ed);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (!prefs.sounds || e.isComposing) return;
+  const t = e.target;
+  const typing = t.isContentEditable || t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && ['text', 'search', 'number'].includes(t.type));
+  const kind = typing && Sound.soundForKey(e);
+  if (kind) Sound.play(kind, prefs.soundVolume);
+}, true);
 
 // ---- structural commands -------------------------------------------------------
 
@@ -595,7 +840,7 @@ function fileMenu() {
       item('Export with synopses (.md)', () => cmdExport('md-notes')),
       item('Download a backup copy', () => cmdExport('json')),
       h('hr'),
-      item('Close project', () => { if (confirmDiscard()) { state.project = null; state.dirty = false; render(); } }),
+      item('Close project', closeProject),
     ));
 }
 
@@ -603,7 +848,9 @@ function renderStatus() {
   const el = document.getElementById('status');
   if (!el || !P()) return;
   const words = M.treeWords(P());
-  const parts = [h('span', { class: 'total', 'data-wc-total': '' }, `${fmt(words)} words`)];
+  const parts = [progressRing(words), h('span', { class: 'total' }, `${fmt(words)} words`)];
+  const net = state.session ? words - state.session.baseWords : 0;
+  if (net) parts.push(h('button', { class: 'session-chip', title: 'This session so far', onclick: () => showSessionSummary() }, `${net > 0 ? '+' : '−'}${fmt(Math.abs(net))} this session`));
   if (state.conflict) {
     parts.push(h('button', { class: 'btn small danger', onclick: showConflict }, 'File changed elsewhere'));
   } else if (state.saveError) {
@@ -624,8 +871,8 @@ function refreshCounts() {
     const id = el.dataset.wc;
     if (P().nodes[id]) el.textContent = fmt(M.treeWords(P(), id));
   });
-  const t = document.querySelector('[data-wc-total]');
-  if (t) t.textContent = `${fmt(M.treeWords(P()))} words`;
+  trackProgress();
+  renderStatus();
   const bar = document.querySelector('[data-progress]');
   if (bar) {
     const n = sel();
@@ -759,10 +1006,13 @@ function renderWrite() {
     'aria-label': 'Draft text',
   });
   ed.innerHTML = n.content;
+  ed.classList.toggle('fade-rest', prefs.fadeRest);
   let countTimer;
   ed.addEventListener('input', () => {
     n.content = /^(\s|<br>|<p><br><\/p>|<div><br><\/div>)*$/.test(ed.innerHTML) ? '' : ed.innerHTML;
+    state.session?.touched.add(n.id);
     changed();
+    followCaret(ed);
     clearTimeout(countTimer);
     countTimer = setTimeout(refreshCounts, 250);
   });
@@ -774,11 +1024,15 @@ function renderWrite() {
     document.execCommand('insertHTML', false, html);
   });
   ed.addEventListener('focus', () => document.execCommand('defaultParagraphSeparator', false, 'p'));
+  ed.addEventListener('keyup', (e) => { if (e.key.startsWith('Arrow') || e.key.startsWith('Page')) followCaret(ed); });
+  ed.addEventListener('mouseup', () => followCaret(ed));
+  ed.addEventListener('focus', () => updateFade(ed));
+  ed.addEventListener('blur', () => ed.classList.remove('fading')); // show everything when you're not writing
 
   const tb = (label, title, fn) => h('button', { class: 'tb', title, onmousedown: (e) => { e.preventDefault(); fn(); } }, label);
   const exec = (cmd, arg) => () => { document.execCommand(cmd, false, arg); ed.dispatchEvent(new Event('input')); };
 
-  return h('div', { class: 'write' },
+  return h('div', { class: `write ${prefs.typewriterScroll ? 'tw-scroll' : ''}` },
     crumbs(n),
     h('div', { class: 'title-row' },
       h('span', { class: `type-badge type-${n.type}` }, M.TYPES[n.type].label),
@@ -807,6 +1061,8 @@ function renderWrite() {
       h('span', { class: 'tb-sep' }),
       h('button', { class: 'tb wide', title: 'Split this block into two at the cursor', onmousedown: (e) => { e.preventDefault(); splitAtCursor(); } }, icon('split'), 'Split here'),
       h('div', { class: 'spacer' }),
+      writingToggles(ed),
+      h('span', { class: 'tb-sep' }),
       h('span', { class: 'tb-count' }, h('span', { 'data-wc': n.id }, fmt(M.treeWords(P(), n.id))), n.targetWords ? ` / ${fmt(n.targetWords)}` : '', ' words'),
     ),
     ed,
@@ -934,7 +1190,13 @@ function renderOutline() {
 function statusSelect(n) {
   return h('select', {
     class: `status-select status-${n.status}`, 'aria-label': 'Status',
-    onchange: (e) => { n.status = e.target.value; changed(); render(); },
+    onchange: (e) => {
+      const was = n.status;
+      n.status = e.target.value;
+      changed();
+      render();
+      if (n.status === 'done' && was !== 'done') blockDone(n, e.target);
+    },
   }, M.STATUSES.map((s) => h('option', { value: s.id, selected: s.id === n.status }, s.label)));
 }
 
@@ -1651,7 +1913,7 @@ function renderAIResult(n, res) {
 
 // ---- settings ------------------------------------------------------------------------
 
-function openSettings() {
+function openSettings({ scrollTo } = {}) {
   const dlg = h('dialog', { class: 'settings' });
   const keyInput = h('input', { type: 'password', value: sessionKey, placeholder: 'sk-ant-…', autocomplete: 'off', spellcheck: false });
   const close = () => { dlg.close(); dlg.remove(); render(); };
@@ -1663,6 +1925,26 @@ function openSettings() {
       h('label', null, 'Mode'), modeControl(),
       h('label', null, 'Text size'),
       h('input', { type: 'range', min: 15, max: 24, value: prefs.fontSize, oninput: (e) => { prefs.fontSize = +e.target.value; savePrefs(); document.documentElement.style.setProperty('--editor-size', `${prefs.fontSize}px`); } })),
+    typeControls(),
+    h('h3', null, 'Writing'),
+    h('label', { class: 'check' },
+      h('input', { type: 'checkbox', checked: prefs.sounds, onchange: (e) => setWritingPref('sounds', e.target.checked) }),
+      h('span', null, h('strong', null, 'Typing sounds'), h('br'), h('span', { class: 'muted small' }, 'Typewriter clacks as you type, and a bell with the carriage return on Enter.'))),
+    h('div', { class: 'kv indent' },
+      h('label', null, 'Volume'),
+      h('div', { class: 'range-row' },
+        h('input', { type: 'range', min: 0.05, max: 1, step: 0.05, value: prefs.soundVolume, oninput: (e) => { prefs.soundVolume = +e.target.value; savePrefs(); }, onchange: () => Sound.play('key', prefs.soundVolume) }),
+        h('button', { class: 'btn small', onclick: () => { Sound.play('key', prefs.soundVolume); setTimeout(() => Sound.play('key', prefs.soundVolume), 120); setTimeout(() => Sound.play('enter', prefs.soundVolume), 300); } }, 'Try it'))),
+    h('label', { class: 'check' },
+      h('input', { type: 'checkbox', checked: prefs.typewriterScroll, onchange: (e) => setWritingPref('typewriterScroll', e.target.checked) }),
+      h('span', null, h('strong', null, 'Typewriter scrolling'), h('br'), h('span', { class: 'muted small' }, 'Keeps the line you’re writing in the middle of the screen.'))),
+    h('label', { class: 'check' },
+      h('input', { type: 'checkbox', checked: prefs.fadeRest, onchange: (e) => setWritingPref('fadeRest', e.target.checked) }),
+      h('span', null, h('strong', null, 'Fade the rest'), h('br'), h('span', { class: 'muted small' }, 'Dims every paragraph except the one you’re writing.'))),
+    h('label', { class: 'check' },
+      h('input', { type: 'checkbox', checked: prefs.celebrate, onchange: (e) => { prefs.celebrate = e.target.checked; savePrefs(); } }),
+      h('span', null, h('strong', null, 'Celebrations & milestones'), h('br'), h('span', { class: 'muted small' }, 'A little confetti when you hit a word target, finish a block, or pass a milestone.'))),
+    h('p', { class: 'muted small' }, 'The first three are also buttons on the writing toolbar, so you can flip them any time.'),
     h('h3', null, 'AI assistant ', h('span', { class: 'muted small' }, '(optional)')),
     h('label', { class: 'check' },
       h('input', { type: 'checkbox', checked: prefs.aiEnabled, onchange: (e) => { prefs.aiEnabled = e.target.checked; savePrefs(); } }),
@@ -1685,17 +1967,18 @@ function openSettings() {
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg);
   dlg.showModal();
+  if (scrollTo) dlg.querySelector(`#${scrollTo}`)?.scrollIntoView({ block: 'start' });
 }
 
 // ---- skins ---------------------------------------------------------------------------
 // Tokens and signature touches live in css/themes.css; these swatches only draw the picker.
 
 const SKINS = [
-  { id: 'studio', name: 'Studio', vibe: 'Warm paper, bookish serif', bg: '#f5f0e6', card: '#fffdf8', ink: '#2a2520', accent: '#b4532a', font: "'Literata', serif" },
-  { id: 'minimal', name: 'Minimal', vibe: 'Sleek, modern, quiet', bg: '#fafafa', card: '#ffffff', ink: '#0a0a0b', accent: '#111113', font: "'Geist', sans-serif" },
-  { id: 'typewriter', name: 'Typewriter', vibe: 'Inked paper, ribbon red', bg: '#e6dfcd', card: '#f7f2e4', ink: '#211f1b', accent: '#b0302a', font: "'Special Elite', monospace" },
-  { id: 'nocturne', name: 'Nocturne', vibe: '2am, candlelit. Always dark', bg: '#0d1019', card: '#141925', ink: '#ebe4d6', accent: '#e8ae5b', font: "'Cormorant Garamond', serif", dark: true },
-  { id: 'meadow', name: 'Meadow', vibe: 'Soft, cosy, a little dreamy', bg: '#f4f2e8', card: '#fffdf7', ink: '#2c3327', accent: '#c25e68', font: "'Fraunces', serif" },
+  { id: 'studio', name: 'Studio', vibe: 'Warm paper, bookish serif', bg: '#f5f0e6', card: '#fffdf8', ink: '#2a2520', accent: '#b4532a', font: "'Literata', serif", type: { prose: 'Literata', display: 'Literata', ui: 'Inter', leading: 1.75 } },
+  { id: 'minimal', name: 'Minimal', vibe: 'Sleek, modern, quiet', bg: '#fafafa', card: '#ffffff', ink: '#0a0a0b', accent: '#111113', font: "'Geist', sans-serif", type: { prose: 'Geist', display: 'Geist', ui: 'Geist', leading: 1.8 } },
+  { id: 'typewriter', name: 'Typewriter', vibe: 'Inked paper, ribbon red', bg: '#e6dfcd', card: '#f7f2e4', ink: '#211f1b', accent: '#b0302a', font: "'Special Elite', monospace", type: { prose: 'Courier Prime', display: 'Special Elite', ui: 'IBM Plex Mono', leading: 1.85 } },
+  { id: 'nocturne', name: 'Nocturne', vibe: '2am, candlelit. Always dark', bg: '#0d1019', card: '#141925', ink: '#ebe4d6', accent: '#e8ae5b', font: "'Cormorant Garamond', serif", dark: true, type: { prose: 'EB Garamond', display: 'Cormorant Garamond', ui: 'Inter', leading: 1.7 } },
+  { id: 'meadow', name: 'Meadow', vibe: 'Soft, cosy, a little dreamy', bg: '#f4f2e8', card: '#fffdf7', ink: '#2c3327', accent: '#c25e68', font: "'Fraunces', serif", type: { prose: 'Lora', display: 'Fraunces', ui: 'Nunito Sans', leading: 1.8 } },
 ];
 const skinOf = () => SKINS.find((k) => k.id === prefs.skin) || SKINS[0];
 const darkQuery = matchMedia('(prefers-color-scheme: dark)');
@@ -1710,9 +1993,11 @@ function applyTheme(animate = false) {
   }
   d.dataset.skin = skinOf().id;
   d.dataset.mode = dark ? 'dark' : 'light';
+  applyType();
   requestAnimationFrame(refitTextareas);
   document.querySelectorAll('.skin-opt').forEach((b) => b.classList.toggle('on', b.dataset.skin === prefs.skin));
   document.querySelectorAll('.mode-control').forEach((c) => c.replaceWith(modeControl()));
+  document.querySelectorAll('.type-controls').forEach((c) => c.replaceWith(typeControls()));
 }
 darkQuery.addEventListener('change', () => applyTheme(true));
 // A new skin brings new fonts: re-measure auto-growing textareas when they arrive.
@@ -1749,7 +2034,128 @@ function lookMenu() {
     h('div', { class: 'menu-pop right look-pop' },
       h('div', { class: 'eyebrow' }, 'Skin'),
       skinPicker(),
-      h('div', { class: 'look-foot' }, h('span', { class: 'eyebrow' }, 'Mode'), modeControl())));
+      h('div', { class: 'look-foot' }, h('span', { class: 'eyebrow' }, 'Mode'), modeControl()),
+      h('button', { class: 'link look-fonts', onclick: (e) => { e.target.closest('details').open = false; openSettings({ scrollTo: 'type' }); } }, 'Change fonts & spacing…')));
+}
+
+// ---- type ------------------------------------------------------------------------------
+// Each skin has its own fonts, but writers can swap any of the three (writing, headings,
+// interface) and the line spacing, per skin. Overrides are set as inline custom properties
+// on <html>, which beat the skin's tokens. Fonts not already in index.html load on demand
+// (and the service worker keeps them for offline use).
+
+const GF = 'https://fonts.googleapis.com/css2?display=swap&family=';
+const FONTS = [
+  // name, group, Google Fonts spec (null: already loaded by index.html), size scale for prose, heading weight
+  { name: 'Literata', group: 'Serif', w: 600 },
+  { name: 'Lora', group: 'Serif', w: 600 },
+  { name: 'EB Garamond', group: 'Serif', scale: 1.1, w: 600 },
+  { name: 'Crimson Pro', group: 'Serif', spec: 'Crimson+Pro:ital,wght@0,400;0,600;1,400', scale: 1.1, w: 600 },
+  { name: 'Source Serif 4', group: 'Serif', spec: 'Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400', w: 600 },
+  { name: 'Newsreader', group: 'Serif', spec: 'Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400', scale: 1.04, w: 600 },
+  { name: 'Spectral', group: 'Serif', spec: 'Spectral:ital,wght@0,400;0,600;1,400', w: 600 },
+  { name: 'Libre Baskerville', group: 'Serif', spec: 'Libre+Baskerville:ital,wght@0,400;0,700;1,400', scale: .92, w: 700 },
+  { name: 'Merriweather', group: 'Serif', spec: 'Merriweather:ital,wght@0,400;0,700;1,400', scale: .92, w: 700 },
+  { name: 'Inter', group: 'Sans', scale: .95, w: 600 },
+  { name: 'Geist', group: 'Sans', scale: .95, w: 600 },
+  { name: 'Nunito Sans', group: 'Sans', w: 700 },
+  { name: 'DM Sans', group: 'Sans', spec: 'DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;1,9..40,400', scale: .97, w: 600 },
+  { name: 'Atkinson Hyperlegible', group: 'Sans', spec: 'Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400', note: 'designed for legibility', w: 700 },
+  { name: 'Lexend', group: 'Sans', spec: 'Lexend:wght@400;600', note: 'designed for easier reading', scale: .93, w: 600 },
+  { name: 'Space Grotesk', group: 'Sans', spec: 'Space+Grotesk:wght@400;600', scale: .95, w: 600 },
+  { name: 'Courier Prime', group: 'Mono', scale: .9, w: 700 },
+  { name: 'IBM Plex Mono', group: 'Mono', scale: .88, w: 600 },
+  { name: 'JetBrains Mono', group: 'Mono', spec: 'JetBrains+Mono:ital,wght@0,400;0,600;1,400', scale: .88, w: 600 },
+  { name: 'Space Mono', group: 'Mono', spec: 'Space+Mono:ital,wght@0,400;0,700;1,400', scale: .88, w: 700 },
+  { name: 'Fraunces', group: 'Display', w: 500 },
+  { name: 'Cormorant Garamond', group: 'Display', scale: 1.15, w: 600 },
+  { name: 'Playfair Display', group: 'Display', spec: 'Playfair+Display:ital,wght@0,400;0,600;1,400', w: 600 },
+  { name: 'DM Serif Display', group: 'Display', spec: 'DM+Serif+Display:ital@0;1', w: 400 },
+  { name: 'Instrument Serif', group: 'Display', spec: 'Instrument+Serif:ital@0;1', scale: 1.1, w: 400 },
+  { name: 'Special Elite', group: 'Display', scale: .9, w: 400 },
+  { name: 'Caveat', group: 'Handwritten', spec: 'Caveat:wght@400;600', scale: 1.3, w: 600 },
+  { name: 'Patrick Hand', group: 'Handwritten', spec: 'Patrick+Hand', scale: 1.1, w: 400 },
+];
+const GENERIC = { Serif: 'Georgia, serif', Sans: 'system-ui, sans-serif', Mono: 'ui-monospace, Menlo, monospace', Display: 'Georgia, serif', Handwritten: 'cursive' };
+const fontOf = (name) => FONTS.find((f) => f.name === name);
+const stack = (f) => `'${f.name}', ${GENERIC[f.group]}`;
+const TYPE_SLOTS = [
+  ['prose', 'Writing', 'Your draft, synopses and notes'],
+  ['display', 'Headings', 'Titles and headings'],
+  ['ui', 'Interface', 'Buttons, labels and menus'],
+];
+
+// The CSS for the current skin's overrides. Kept in prefs so index.html can apply it before first paint.
+function typeCss() {
+  const t = prefs.type[prefs.skin] || {};
+  const vars = {};
+  const hrefs = [];
+  const use = (name) => { const f = fontOf(name); if (f?.spec) hrefs.push(GF + f.spec); return f; };
+  const prose = t.prose && use(t.prose);
+  if (prose) Object.assign(vars, { '--serif': stack(prose), '--prose-scale': String(prose.scale || 1) });
+  const display = t.display && use(t.display);
+  if (display) Object.assign(vars, { '--display': stack(display), '--display-w': String(display.w) });
+  const ui = t.ui && use(t.ui);
+  if (ui) Object.assign(vars, { '--ui': stack(ui), '--ui-size': ui.group === 'Mono' ? '13px' : '14px' });
+  if (t.leading) vars['--prose-leading'] = String(t.leading);
+  return { vars, hrefs };
+}
+
+const TYPE_VARS = ['--serif', '--prose-scale', '--display', '--display-w', '--ui', '--ui-size', '--prose-leading'];
+function applyType() {
+  const css = typeCss();
+  const st = document.documentElement.style;
+  TYPE_VARS.forEach((v) => st.removeProperty(v));
+  Object.entries(css.vars).forEach(([k, v]) => st.setProperty(k, v));
+  css.hrefs.forEach(loadFontCss);
+  if (JSON.stringify(css) !== JSON.stringify(prefs.typeCss)) { prefs.typeCss = css; savePrefs(); }
+  requestAnimationFrame(refitTextareas);
+}
+
+function loadFontCss(href) {
+  if ([...document.querySelectorAll('link[data-font]')].some((l) => l.href === href)) return;
+  document.head.append(h('link', { rel: 'stylesheet', href, 'data-font': '' }));
+}
+
+function setType(slot, value) {
+  const t = { ...(prefs.type[prefs.skin] || {}) };
+  if (value == null || value === '') delete t[slot]; else t[slot] = value;
+  prefs.type = { ...prefs.type, [prefs.skin]: t };
+  savePrefs();
+  applyType();
+  document.querySelectorAll('.type-controls').forEach((c) => c.replaceWith(typeControls()));
+}
+
+function typeControls() {
+  const k = skinOf();
+  const t = prefs.type[k.id] || {};
+  const groups = [...new Set(FONTS.map((f) => f.group))];
+  const select = (slot) => h('select', { onchange: (e) => setType(slot, e.target.value) },
+    h('option', { value: '' }, `${k.name} default (${k.type[slot]})`),
+    groups.map((g) => h('optgroup', { label: g },
+      FONTS.filter((f) => f.group === g).map((f) => h('option', { value: f.name, selected: t[slot] === f.name }, f.note ? `${f.name}, ${f.note}` : f.name)))));
+  const leading = t.leading || k.type.leading;
+  const custom = Object.keys(t).length > 0;
+  return h('div', { class: 'type-controls', id: 'type' },
+    h('div', { class: 'type-head' },
+      h('span', { class: 'eyebrow' }, `Fonts for ${k.name}`),
+      custom && h('button', { class: 'link', onclick: () => { prefs.type = { ...prefs.type, [k.id]: {} }; setType('prose', null); } }, 'Reset to skin defaults')),
+    h('div', { class: 'type-sample' },
+      h('strong', null, 'Chapter One: The Crossing'),
+      h('p', null, 'The ferry left before the light did, which suited her. She stood at the rail, rehearsing the sentence she would say on Monday.')),
+    h('div', { class: 'kv' },
+      TYPE_SLOTS.map(([slot, label, hint]) => [h('label', { title: hint }, label), select(slot)]),
+      h('label', null, 'Line spacing'),
+      h('div', { class: 'range-row' },
+        h('input', { type: 'range', min: 1.3, max: 2.3, step: 0.05, value: leading, oninput: (e) => {
+          const v = +e.target.value;
+          const t2 = { ...(prefs.type[k.id] || {}) };
+          if (Math.abs(v - k.type.leading) < 0.001) delete t2.leading; else t2.leading = v;
+          prefs.type = { ...prefs.type, [k.id]: t2 };
+          savePrefs(); applyType();
+          e.target.nextSibling.textContent = v.toFixed(2);
+        } }),
+        h('span', { class: 'range-val' }, leading.toFixed(2)))));
 }
 
 function toggleFocus() {

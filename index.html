@@ -22,6 +22,12 @@
       const d = document.documentElement, skin = p.skin || 'studio', theme = p.theme || 'auto';
       const dark = skin === 'nocturne' || theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
       d.dataset.skin = skin; d.dataset.mode = dark ? 'dark' : 'light';
+      // The writer's own fonts and spacing for this skin, if any (computed by app.js).
+      const t = p.typeCss;
+      if (t) {
+        for (const [k, v] of Object.entries(t.vars || {})) d.style.setProperty(k, v);
+        for (const href of t.hrefs || []) document.write(`<link rel="stylesheet" data-font href="${href}">`);
+      }
     })();
   </script>
 </head>

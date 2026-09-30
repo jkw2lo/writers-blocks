@@ -487,12 +487,56 @@ dialog .kv { grid-template-columns: 90px 1fr; }
 .conflict-choices .btn span { font-weight: 400; font-size: 12.5px; opacity: .8; }
 .conflict-choices .btn.danger-ghost { border-color: transparent; background: none; }
 .conflict-choices .btn.danger-ghost:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.type-controls { margin: 18px 0 4px; padding-top: 14px; border-top: 1px solid var(--line); scroll-margin-top: 12px; }
+.type-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.type-sample { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 12px; }
+.type-sample strong { display: block; font: var(--display-w) 19px/1.25 var(--display); margin-bottom: 4px; }
+.type-sample p { margin: 0; font: calc(16px * var(--prose-scale))/var(--prose-leading) var(--serif); color: var(--ink-2); }
+.type-controls .kv { gap: 8px 10px; }
+.type-controls optgroup { font-style: normal; }
+.range-row { display: flex; align-items: center; gap: 10px; }
+.range-row input { flex: 1; }
+.range-val { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.6em; text-align: right; }
+.look-fonts { align-self: flex-start; }
 .dlg-foot { display: flex; justify-content: flex-end; margin-top: 18px; }
 
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: .2s; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; display: flex; gap: 14px; align-items: center; box-shadow: var(--shadow-lg); z-index: 50; max-width: calc(100vw - 32px); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 #toast.error { background: var(--danger); color: #fff; }
 #toast .link { color: var(--accent-soft); font-size: 13px; }
+
+/* ---------- progress & celebrations ---------- */
+.progress-ring { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; background: none; border-radius: 50%; }
+.progress-ring:hover { background: var(--surface-2); }
+.progress-ring svg { width: 20px; height: 20px; transform: rotate(-90deg); }
+.progress-ring circle { fill: none; stroke-width: 3; }
+.progress-ring .track { stroke: var(--surface-3); }
+.progress-ring .fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .6s cubic-bezier(.2, .8, .2, 1); }
+.progress-ring.full .fill { stroke: var(--s-done); }
+.session-chip { border: 0; background: color-mix(in srgb, var(--s-done) 14%, transparent); color: var(--s-done); font-weight: 600; font-size: 12px; padding: 2px 9px; border-radius: 99px; font-variant-numeric: tabular-nums; }
+.session-chip:hover { background: color-mix(in srgb, var(--s-done) 22%, transparent); }
+#toast.cheer { background: var(--surface); color: var(--ink); border: 1px solid var(--accent); box-shadow: var(--shadow-lg), 0 0 0 4px var(--accent-soft); font-weight: 500; }
+#toast .cheer-icon { color: var(--accent); display: grid; }
+#toast.cheer.show { animation: cheer-pop .45s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes cheer-pop { from { transform: translate(-50%, 14px) scale(.9); } to { transform: translate(-50%, 0) scale(1); } }
+canvas.confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 60; }
+dialog.session { width: min(520px, calc(100vw - 32px)); }
+.session-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0 6px; }
+.session-stats .stat-num { font-size: 22px; }
+.session-list { margin-top: 12px; }
+.session-list p { margin: 3px 0 0; font-family: var(--serif); }
+@media (max-width: 520px) { .session-stats { grid-template-columns: 1fr 1fr; } }
+
+/* ---------- writing aids ---------- */
+.tb-toggles { display: inline-flex; gap: 2px; }
+.tb.toggle { color: var(--muted); }
+.tb.toggle .icon { width: 15px; height: 15px; }
+.tb.toggle.on { color: var(--accent); background: var(--accent-soft); }
+.editor.fade-rest > * { transition: opacity .35s ease; }
+.editor.fade-rest.fading > * { opacity: .22; }
+.write.tw-scroll .editor { padding-bottom: 55vh; }
+dialog .kv.indent { margin: -4px 0 8px 26px; grid-template-columns: 60px 1fr; }
+dialog .check strong { font-weight: 600; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1180px) {

@@ -21,6 +21,12 @@ A writing workspace for long-form work (novels, memoir, long stories, essay coll
   - **Typewriter**: grainy paper, Courier, ribbon red, your draft typed onto a sheet with a margin rule
   - **Nocturne**: 2am and candlelit, Garamond with drop caps (always dark)
   - **Meadow**: soft and cosy, with Fraunces, Lora, sage and rose
+- **Your own fonts**: keep a skin's look but swap its writing, heading or interface font (about 30 to choose from, including Atkinson Hyperlegible and Lexend for easier reading, and a couple of handwritten ones), and set your line spacing. Choices are remembered per skin: *Look → Change fonts & spacing…* or Settings.
+- **Writing aids**, each a button on the writing toolbar (and in Settings) you can flip any time:
+  - **Typing sounds**: typewriter clacks, and a bell and carriage return on Enter. Synthesized in the browser, so they work offline. Off by default.
+  - **Typewriter scrolling**: keeps the line you're writing in the middle of the screen.
+  - **Fade the rest**: dims every paragraph except the one you're in.
+- **Watch it come together**: a progress ring for the book's word target, a "+N this session" count, and a little confetti when a block hits its word target, you mark something Done, or the book passes a milestone (5,000 words, novelette length, novel length…). Closing a project shows a summary of the session. Celebrations can be turned off in Settings.
 - **Focus mode** (`⌘/Ctrl + .`) and Markdown export of the manuscript (with or without synopses).
 
 ## Brainstorming
