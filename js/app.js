@@ -9,6 +9,8 @@ const state = {
   project: null,
   handle: null, // FileSystemFileHandle when autosaving
   fileName: null,
+  fileStamp: null, // file's lastModified as of our last read/write, to spot changes made elsewhere
+  conflict: false, // the file changed elsewhere; autosave is paused until the writer decides
   dirty: false,
   saving: false,
   saveError: null,
@@ -155,15 +157,21 @@ function changed() {
 
 const serialize = () => JSON.stringify(P(), null, 2);
 
-async function save() {
+async function save({ force = false } = {}) {
   if (!state.handle) return saveAs();
   clearTimeout(saveTimer);
+  if (state.conflict && !force) return;
   state.saving = true;
   renderStatus();
   try {
-    await S.writeHandle(state.handle, serialize());
+    if (!force && state.fileStamp != null && (await S.fileStamp(state.handle)) !== state.fileStamp) {
+      state.saving = false;
+      return showConflict();
+    }
+    state.fileStamp = await S.writeHandle(state.handle, serialize());
     state.dirty = false;
     state.saveError = null;
+    state.conflict = false;
   } catch (e) {
     state.saveError = e.message;
     toast(`Couldn't save: ${e.message}`, { error: true });
@@ -186,6 +194,8 @@ async function saveAs() {
     const handle = await S.pickSaveHandle(name);
     state.handle = handle;
     state.fileName = handle.name;
+    state.fileStamp = null; // a file we just chose (and may be replacing) is ours to write
+    state.conflict = false;
     await S.rememberHandle(handle);
     await save();
     toast(`Saving to ${handle.name}. Changes now save automatically.`);
@@ -198,13 +208,16 @@ function confirmDiscard() {
   return !state.dirty || confirm('You have changes that are not saved to a file. Discard them?');
 }
 
-function loadProject(text, { handle = null, name = null } = {}) {
+function loadProject(text, { handle = null, name = null, stamp = null, keepPlace = false } = {}) {
   const p = M.validate(JSON.parse(text));
   state.project = p;
   state.handle = handle;
   state.fileName = name;
+  state.fileStamp = stamp;
+  state.conflict = false;
+  state.saveError = null;
   state.dirty = false;
-  state.selectedId = firstLeaf(p) || 'root';
+  if (!keepPlace || !p.nodes[state.selectedId]) state.selectedId = firstLeaf(p) || 'root';
   state.undo = [];
   state.aiResults = {};
   state.spark = null;
@@ -223,6 +236,8 @@ async function cmdNew() {
   state.project = M.newProject(title.trim() || 'Untitled Book');
   state.handle = null;
   state.fileName = null;
+  state.fileStamp = null;
+  state.conflict = false;
   state.undo = [];
   state.aiResults = {};
   state.spark = null;
@@ -235,8 +250,8 @@ async function cmdNew() {
 async function cmdOpen() {
   if (!confirmDiscard()) return;
   try {
-    const { handle, name, text } = await S.pickOpen();
-    loadProject(text, { handle, name });
+    const { handle, name, text, stamp } = await S.pickOpen();
+    loadProject(text, { handle, name, stamp });
     if (handle) await S.rememberHandle(handle);
   } catch (e) {
     if (e.name !== 'AbortError') toast(e.message, { error: true });
@@ -245,8 +260,8 @@ async function cmdOpen() {
 
 async function cmdReopen() {
   try {
-    const { name, text } = await S.readHandle(state.recent);
-    loadProject(text, { handle: state.recent, name });
+    const { name, text, stamp } = await S.readHandle(state.recent);
+    loadProject(text, { handle: state.recent, name, stamp });
   } catch (e) {
     toast(`Couldn't reopen: ${e.message}`, { error: true });
     await S.forgetRecent();
@@ -268,6 +283,63 @@ function cmdExport(kind) {
   if (kind === 'md') S.download(`${base}.md`, M.exportMarkdown(P()), 'text/markdown');
   if (kind === 'md-notes') S.download(`${base}-with-notes.md`, M.exportMarkdown(P(), { includeNotes: true }), 'text/markdown');
   if (kind === 'json') S.download(`${base}-copy-${new Date().toISOString().slice(0, 10)}.wblocks.json`, serialize());
+}
+
+// ---- changes made elsewhere ------------------------------------------------------
+// If the project file changes on disk while it's open here (another device syncing it,
+// another tab or app), never silently overwrite it. With nothing unsaved here we just
+// pick up the new version; with unsaved changes on both sides, the writer chooses.
+
+async function checkFileChanged() {
+  if (!state.handle || state.saving || state.conflict || state.fileStamp == null) return;
+  let stamp;
+  try { stamp = await S.fileStamp(state.handle); } catch { return; } // moved or no permission: save() will report it
+  if (stamp === state.fileStamp) return;
+  if (state.dirty) return showConflict();
+  try {
+    const { name, text, stamp: fresh } = await S.readHandle(state.handle);
+    loadProject(text, { handle: state.handle, name, stamp: fresh, keepPlace: true });
+    toast(`Updated with the latest version of ${name}.`);
+  } catch (e) {
+    toast(`Couldn't load the updated file: ${e.message}`, { error: true });
+  }
+}
+window.addEventListener('focus', checkFileChanged);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkFileChanged(); });
+
+function showConflict() {
+  clearTimeout(saveTimer);
+  state.conflict = true;
+  renderStatus();
+  if (document.querySelector('dialog.conflict')) return;
+  const dlg = h('dialog', { class: 'settings conflict' });
+  const done = () => { dlg.close(); dlg.remove(); };
+  const act = (fn) => async () => { done(); await fn(); };
+  dlg.append(
+    h('div', { class: 'dlg-head' }, h('h2', null, 'This file changed somewhere else')),
+    h('p', null, `${state.fileName} was saved from another device, tab or app while you had unsaved changes here. Autosave is paused so nothing gets overwritten.`),
+    h('div', { class: 'conflict-choices' },
+      h('button', { class: 'btn primary', onclick: act(() => saveAs()) },
+        h('strong', null, 'Save mine as a copy…'), h('span', null, 'Keeps both versions. Compare them, then carry on in either.')),
+      h('button', { class: 'btn', onclick: act(reloadFromDisk) },
+        h('strong', null, 'Use the file’s version'), h('span', null, 'Loads what’s on disk and drops your unsaved changes here.')),
+      h('button', { class: 'btn danger-ghost', onclick: act(() => save({ force: true })) },
+        h('strong', null, 'Keep mine and overwrite'), h('span', null, 'Replaces the file with this version. The other changes are lost.'))),
+  );
+  dlg.addEventListener('cancel', (e) => e.preventDefault()); // Esc would leave autosave paused with no explanation
+  document.body.append(dlg);
+  dlg.showModal();
+}
+
+async function reloadFromDisk() {
+  try {
+    const { name, text, stamp } = await S.readHandle(state.handle);
+    loadProject(text, { handle: state.handle, name, stamp, keepPlace: true });
+    toast(`Loaded the version of ${name} on disk.`);
+  } catch (e) {
+    toast(`Couldn't load the file: ${e.message}`, { error: true });
+    showConflict();
+  }
 }
 
 // ---- structural commands -------------------------------------------------------
@@ -532,8 +604,10 @@ function renderStatus() {
   if (!el || !P()) return;
   const words = M.treeWords(P());
   const parts = [h('span', { class: 'total', 'data-wc-total': '' }, `${fmt(words)} words`)];
-  if (state.saveError) {
-    parts.push(h('button', { class: 'btn small danger', onclick: save }, 'Save failed. Retry'));
+  if (state.conflict) {
+    parts.push(h('button', { class: 'btn small danger', onclick: showConflict }, 'File changed elsewhere'));
+  } else if (state.saveError) {
+    parts.push(h('button', { class: 'btn small danger', onclick: () => save() }, 'Save failed. Retry'));
   } else if (state.handle) {
     parts.push(h('span', { class: `saved ${state.dirty || state.saving ? 'pending' : ''}`, title: state.fileName },
       state.dirty || state.saving ? 'Saving…' : h('span', null, icon('check'), ` ${state.fileName}`)));

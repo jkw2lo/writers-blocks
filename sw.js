@@ -6,7 +6,7 @@
 // Fonts: cache first, since they never change once published.
 // Anything else (the optional AI assistant) goes straight to the network.
 
-const VERSION = 'wb-v1';
+const VERSION = 'wb-v2';
 const APP = [
   './',
   'index.html',
@@ -21,16 +21,19 @@ const APP = [
   'js/prompts.js',
   'examples/sample.wblocks.json',
 ];
+const FONTS = 'wb-fonts'; // kept across app versions; fonts never change
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
 const NETWORK_TIMEOUT = 3000;
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(APP)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION)
+    .then((c) => c.addAll(APP.map((u) => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
-    for (const key of await caches.keys()) if (key !== VERSION) await caches.delete(key);
+    for (const key of await caches.keys()) if (key !== VERSION && key !== FONTS) await caches.delete(key);
     await self.clients.claim();
   })());
 });
@@ -45,7 +48,9 @@ self.addEventListener('fetch', (e) => {
 
 async function networkFirst(req) {
   const cache = await caches.open(VERSION);
-  const fromNetwork = fetch(req).then((res) => {
+  // no-cache: revalidate with the server rather than trusting the browser's HTTP cache,
+  // so a new version arrives on the next load (unchanged files cost only a 304).
+  const fromNetwork = fetch(req, { cache: 'no-cache' }).then((res) => {
     if (res.ok) cache.put(req, res.clone());
     return res;
   });
@@ -60,7 +65,7 @@ async function networkFirst(req) {
 }
 
 async function cacheFirst(req) {
-  const cache = await caches.open(VERSION);
+  const cache = await caches.open(FONTS);
   const cached = await cache.match(req);
   if (cached) return cached;
   const res = await fetch(req);

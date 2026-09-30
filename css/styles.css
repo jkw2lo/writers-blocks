@@ -481,6 +481,12 @@ dialog h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; c
 dialog .kv { grid-template-columns: 90px 1fr; }
 .check { display: flex; gap: 8px; align-items: flex-start; margin: 10px 0; font-size: 13.5px; }
 .check input { margin-top: 3px; }
+.conflict p { color: var(--ink-2); margin: 10px 0 16px; }
+.conflict-choices { display: flex; flex-direction: column; gap: 8px; }
+.conflict-choices .btn { flex-direction: column; align-items: flex-start; gap: 2px; white-space: normal; text-align: left; padding: 10px 14px; }
+.conflict-choices .btn span { font-weight: 400; font-size: 12.5px; opacity: .8; }
+.conflict-choices .btn.danger-ghost { border-color: transparent; background: none; }
+.conflict-choices .btn.danger-ghost:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
 .dlg-foot { display: flex; justify-content: flex-end; margin-top: 18px; }
 
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: .2s; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; display: flex; gap: 14px; align-items: center; box-shadow: var(--shadow-lg); z-index: 50; max-width: calc(100vw - 32px); }

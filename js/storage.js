@@ -65,9 +65,17 @@ async function ensurePermission(handle) {
 export async function readHandle(handle) {
   if (!(await ensurePermission(handle))) throw new Error('Permission to open the file was denied.');
   const file = await handle.getFile();
-  return { name: file.name, text: await file.text() };
+  return { name: file.name, text: await file.text(), stamp: file.lastModified };
 }
 
+// When the file on disk last changed. Comparing this with the stamp from our own
+// last read/write tells us if something else (another device syncing through
+// iCloud or Dropbox, another tab, another app) has written to it since.
+export async function fileStamp(handle) {
+  return (await handle.getFile()).lastModified;
+}
+
+// Returns the file's new stamp.
 export async function writeHandle(handle, text) {
   if (!(await ensurePermission(handle))) throw new Error('Permission to save the file was denied.');
   // createWritable writes to a temp file and swaps on close, so a crash
@@ -75,6 +83,7 @@ export async function writeHandle(handle, text) {
   const w = await handle.createWritable();
   await w.write(text);
   await w.close();
+  return fileStamp(handle);
 }
 
 export async function pickSaveHandle(suggestedName) {
@@ -84,8 +93,8 @@ export async function pickSaveHandle(suggestedName) {
 export async function pickOpen() {
   if (canAutosave) {
     const [handle] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false });
-    const { name, text } = await readHandle(handle);
-    return { handle, name, text };
+    const { name, text, stamp } = await readHandle(handle);
+    return { handle, name, text, stamp };
   }
   return new Promise((resolve, reject) => {
     const input = document.createElement('input');

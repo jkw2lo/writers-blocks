@@ -42,6 +42,7 @@ Tools for generating material, not just organizing it. They all live in the **Br
 **In a file on your computer, not in the browser.** A project is a single `*.wblocks.json` file that you choose where to save (a Documents folder, iCloud Drive, Dropbox, a git repo…).
 
 - **Chrome, Edge, Arc, Brave**: pick the file once and the app **autosaves to it** as you type (via the File System Access API). Writes are atomic, so a crash mid-save can't corrupt the file.
+- **Editing on more than one device**: if the file changes on disk while it's open (say it syncs in from your laptop via iCloud or Dropbox), Writers Blocks never silently overwrites it. With nothing unsaved it quietly loads the new version when you come back to the window. If you have unsaved changes too, autosave pauses and you choose: save yours as a copy, use the file's version, or overwrite.
 - **Safari, Firefox**: these browsers can't write to your disk directly, so use *Download to save* and *Open…* the file next time.
 
 The browser keeps only small conveniences: your skin and light/dark choice, text size, and on Chromium a *handle* pointing to your last file, so "Reopen" works. That handle holds no text, and the browser asks your permission before the app can read the file again. Use **File → Download a backup copy** now and then, or keep the project file in a synced or versioned folder.
