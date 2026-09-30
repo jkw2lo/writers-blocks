@@ -15,7 +15,7 @@ New to it? The app has a **quick start** on how to approach a project, a searcha
   - **Board**: index cards for the pieces of a part or chapter. Drag to reorder, and edit synopses right on the card.
   - **Outline**: the whole book as a table. Read down "What happens" to check the story holds together; read down "Why it's here" to check every piece earns its place.
   - **Notebook**: loose fragments and ideas with no home yet, as a **Grid** or a spatial **Canvas** (see *Brainstorming*). Drag an idea onto the outline (or use *Make it a block*) and it becomes a block.
-- **Restructure freely**: drag blocks anywhere in the left-hand outline (before, after, or *into* another block), **split** a block at the cursor, **merge** a block with the next one, and undo structural changes.
+- **Restructure freely**: drag blocks anywhere in the left-hand outline; a line shows exactly where they'll land and what they'll sit in, and closed blocks open as you hover. Select several with ⌘/Ctrl- or Shift-click and move them together. Right-click (or ⋯) any block to rename it, turn it into a part/chapter/section, move it somewhere else, change its status or delete it. **Split** a block at the cursor, **merge** a block with the next one, and undo structural changes. New blocks appear in place with their name ready to type, without pulling you away from what you're looking at.
 - **Break it down**: every part and chapter shows its pieces and word counts, so a book becomes a list of sections you can write one sitting at a time.
 - **Skins for your vibe** (the palette icon in the top bar, or Settings), each with light and dark modes:
   - **Studio**: warm paper and a bookish serif (the original look)
@@ -29,6 +29,14 @@ New to it? The app has a **quick start** on how to approach a project, a searcha
   - **Typewriter scrolling**: keeps the line you're writing in the middle of the screen.
   - **Fade the rest**: dims every paragraph except the one you're in.
 - **Watch it come together**: a progress ring for the book's word target, a "+N this session" count, and a little confetti when a block hits its word target, you mark something Done, or the book passes a milestone (5,000 words, novelette length, novel length…). Closing a project shows a summary of the session. Celebrations can be turned off in Settings.
+- **Export, print and share** (*File → Export or print…*, `⌘/Ctrl + E`), with a live preview:
+  - **Manuscript**: just the writing, as a reading copy or a double-spaced copy for marking up on paper
+  - **Working draft**: the writing with its skeleton (direction, status, notes) and lined space for blocks not written yet
+  - **Outline**: the structure alone
+  - **Progress snapshot**: premise, progress, the shape of the book and an excerpt, to share where you're at
+  
+  Save any of them as PDF (via print), Word (.docx), Markdown, plain text, or a single-file web page. Export the whole book or one part or chapter.
+- **Hide the side panel** (`⌘/Ctrl + \`) when you want more room.
 - **Focus mode** (`⌘/Ctrl + .`) and Markdown export of the manuscript (with or without synopses).
 
 ## Brainstorming
@@ -53,7 +61,7 @@ Tools for generating material, not just organizing it. They all live in the **Br
 - **Editing on more than one device**: if the file changes on disk while it's open (say it syncs in from your laptop via iCloud or Dropbox), Writers Blocks never silently overwrites it. With nothing unsaved it quietly loads the new version when you come back to the window. If you have unsaved changes too, autosave pauses and you choose: save yours as a copy, use the file's version, or overwrite.
 - **Safari, Firefox**: these browsers can't write to your disk directly, so use *Download to save* and *Open…* the file next time.
 
-The browser keeps only small conveniences: your skin and light/dark choice, text size, and on Chromium a *handle* pointing to your last file, so "Reopen" works. That handle holds no text, and the browser asks your permission before the app can read the file again. Use **File → Download a backup copy** now and then, or keep the project file in a synced or versioned folder.
+The browser keeps only small conveniences: your skin, fonts and light/dark choice, text size, and on Chromium a **shelf** of recent projects on the welcome screen. For each, the shelf keeps a *handle* pointing to the file plus its title and word count, never its text, and the browser asks your permission before the app can read the file again. Use **File → Download a backup copy** now and then, or keep the project file in a synced or versioned folder.
 
 ## Works offline
 
@@ -103,6 +111,7 @@ js/model.js             the book data model (tree ops, word counts, export)
 js/storage.js           saving/opening files on your disk
 js/ai.js                optional assistant (prompts + Claude API calls)
 js/help.js              quick start, help guide and guided tour
+js/export.js            exports: manuscript, working draft, outline, snapshot → PDF/Word/Markdown/text/HTML
 js/sound.js             typing sounds (Web Audio, no files)
 js/celebrate.js         confetti
 sw.js                   service worker: offline cache for the app and fonts

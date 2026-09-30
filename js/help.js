@@ -39,13 +39,16 @@ export const SECTIONS = [
 <p>Your project is a tree of blocks: <strong>Book → Parts → Chapters → Sections</strong>. Sections can hold sections too, if you want to go deeper. The left panel is the <strong>outline</strong> of the whole tree.</p>
 <ul>
   <li><strong>Select</strong> a block by clicking it. The book title at the top selects the whole book (its overview and premise).</li>
-  <li><strong>Add</strong>: hover a block and click <strong>+</strong> to add a block inside it, or use the buttons under <em>This block</em> on the right (<em>… inside</em>, <em>… after</em>). <em>Add part</em> is at the bottom of the outline.</li>
-  <li><strong>Move</strong>: drag a block onto another. Drop near the top or bottom edge to place it before or after; drop in the middle to put it inside.</li>
-  <li><strong>Reorder</strong> with <em>Up</em> and <em>Down</em> in the right panel, or drag cards on the Board.</li>
-  <li><strong>Split</strong> a block in two at the cursor with <em>Split here</em> on the writing toolbar. <strong>Merge</strong> a block with the next one using <em>Merge next</em>.</li>
-  <li><strong>Undo</strong>: structural changes (moves, splits, merges, deletes) show an <em>Undo</em> button in the message at the bottom of the screen.</li>
+  <li><strong>Add</strong>: hover a block and click <strong>+</strong> to add a block inside it, or use <em>Add part</em> at the bottom. The new block appears right there with its name ready to type, and you stay where you were, so you can sketch the big pieces without getting pulled into one.</li>
+  <li><strong>Rename</strong>: double-click a selected block, or press ${k('F2')} or ${k('Enter')}.</li>
+  <li><strong>More actions</strong>: right-click any block (or click its <strong>⋯</strong>) to rename, add, <em>Turn into</em> a part, chapter or section, <em>Move to</em> somewhere else, change its status, move it up or down, merge or delete. The same menu is on board cards, rows in the Outline view, and the ⋯ beside a block’s title.</li>
+  <li><strong>Select several</strong>: ${k(mod)}-click to pick blocks one by one, or ${k('Shift')}-click for a range. Then drag them together, or use the bar at the bottom of the outline to act on them all.</li>
+  <li><strong>Move</strong> by dragging. A line shows exactly where the block will land and what it will sit in. Drop in the middle of a block to put it inside. At the end of a branch, slide left or right to choose the level (after the section, or after the whole chapter). Hover over a closed block to open it.</li>
+  <li><strong>Delete</strong>: select a block and press ${k('Delete')}, or use the menu. Anything with writing in it asks first, and <em>Undo</em> appears in the message at the bottom.</li>
+  <li><strong>Split</strong> a block in two at the cursor with <em>Split here</em> on the writing toolbar.</li>
   <li><strong>Find</strong> anything with the search box above the outline. It searches titles, synopses, notes, tags and text.</li>
   <li>The coloured dot is the block’s <strong>status</strong>: idea, outlined, drafting, revising, done. The number is its word count, including everything inside it.</li>
+  <li>Want more room? Hide the right-hand panel with the panel button in the top bar (${k(mod, '\\')}).</li>
 </ul>` },
   {
     id: 'views', title: 'The four views', html: `
@@ -107,11 +110,27 @@ export const SECTIONS = [
 <ul>
   <li><strong>Chrome, Edge, Arc, Brave</strong>: choose the file once and every change saves to it automatically. The top bar shows the file name with a tick when it’s saved.</li>
   <li><strong>Safari, Firefox</strong>: these can’t write to your disk, so use <em>Download to save</em> (${k(mod, 'S')}) and open the file next time.</li>
-  <li><strong>Reopen</strong> your last project from the welcome screen (Chrome and friends). The browser asks permission first.</li>
+  <li><strong>Your shelf</strong>: projects you’ve opened appear as books on the welcome screen (Chrome and friends). Click one to pick up where you left off; the browser asks permission first. Hover and click × to take one off the shelf; the file itself isn’t touched. The shelf only remembers where your files are and their titles and word counts, never what’s in them.</li>
   <li><strong>Two devices</strong>: if the file changes somewhere else while it’s open here, Writers Blocks won’t overwrite it. With nothing unsaved, it loads the new version. Otherwise it asks what you’d like to do.</li>
   <li><strong>Backups</strong>: <em>File → Download a backup copy</em> now and then, or keep the file in a synced or versioned folder.</li>
-  <li><strong>Export</strong> the manuscript as Markdown from the File menu, with or without synopses.</li>
+  <li><strong>Export</strong> a manuscript, working draft, outline or progress snapshot as PDF, Word, Markdown, text or a web page. See <em>Exporting, printing and sharing</em>.</li>
   <li><strong>Offline</strong>: after your first visit the app works with no connection, including autosave. In Chrome or Edge you can install it (the install icon in the address bar) to get its own window.</li>
+</ul>` },
+  {
+    id: 'export', title: 'Exporting, printing and sharing', html: `
+<p><em>File → Export or print…</em> (${k(mod, 'E')}) shows a live preview. Choose <strong>what</strong> you want, then <strong>how</strong> to save it.</p>
+<ul>
+  <li><strong>Manuscript</strong>: just the writing. A <em>reading copy</em> looks like a proof; <em>for marking up</em> is double-spaced with wide margins, for editing on paper.</li>
+  <li><strong>Working draft</strong>: the writing with its skeleton. Each block’s direction, status and notes sit above its text, and blocks you haven’t written yet get lined space, so you can draft them by hand.</li>
+  <li><strong>Outline</strong>: the structure alone, to the depth you choose.</li>
+  <li><strong>Progress snapshot</strong>: the premise, your progress, the shape of the book and an excerpt. Made for sharing where you’re at. There’s a shortcut to it on the book’s overview: <em>Share your progress…</em></li>
+</ul>
+<p>Export the whole book, or just one part or chapter (<em>From</em>). Then save as:</p>
+<ul>
+  <li><strong>Print or save as PDF</strong>: opens your system’s print dialog; choose <em>Save as PDF</em> there for a file.</li>
+  <li><strong>Word (.docx)</strong>: opens in Word, Pages, Google Docs or LibreOffice, ready for tracked changes.</li>
+  <li><strong>Markdown</strong> or <strong>plain text</strong>: for other writing apps.</li>
+  <li><strong>Web page</strong>: a single file anyone can open in a browser. Handy to email.</li>
 </ul>` },
   {
     id: 'ai', title: 'The AI assistant (optional)', html: `
@@ -127,7 +146,14 @@ export const SECTIONS = [
 <table class="keys">
   <tr><td>${k(mod, 'S')}</td><td>Save (or download, in Safari and Firefox)</td></tr>
   <tr><td>${k(mod, '.')}</td><td>Focus mode on or off</td></tr>
-  <tr><td>${k('Esc')}</td><td>Leave focus mode</td></tr>
+  <tr><td>${k('Esc')}</td><td>Leave focus mode; clear a multi-selection</td></tr>
+  <tr><td>${k(mod, '\\')}</td><td>Hide or show the side panel</td></tr>
+  <tr><td>${k(mod, 'E')}</td><td>Export or print</td></tr>
+  <tr><td>${k('F2')} or ${k('Enter')}</td><td>Rename the selected block (in the outline)</td></tr>
+  <tr><td>${k('Delete')}</td><td>Delete the selected blocks (in the outline)</td></tr>
+  <tr><td>${k('↑')} ${k('↓')} ${k('←')} ${k('→')}</td><td>Move through the outline; close or open a block</td></tr>
+  <tr><td>${k(mod)}-click, ${k('Shift')}-click</td><td>Select several blocks</td></tr>
+  <tr><td>Right-click</td><td>Block menu: rename, turn into, move to, status, delete</td></tr>
   <tr><td>${k(mod, 'B')} ${k(mod, 'I')}</td><td>Bold, italic</td></tr>
   <tr><td>${k(mod, 'Enter')}</td><td>Add a note to the Notebook; send a question to the assistant</td></tr>
   <tr><td>${k('?')}</td><td>Open this help (when you’re not typing)</td></tr>
@@ -191,7 +217,7 @@ export function openHelp({ section = 'quickstart', onTour } = {}) {
 // isn't on screen are skipped, so the tour adapts to whatever layout is showing.
 
 export function startTour(steps, { onEnd } = {}) {
-  const live = steps.filter((s) => !s.el || document.querySelector(s.el));
+  const live = steps.filter((s) => !s.el || document.querySelector(s.el)?.getClientRects().length);
   if (!live.length) return;
   let i = 0;
   const layer = document.createElement('div');

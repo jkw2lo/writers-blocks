@@ -358,20 +358,3 @@ export function htmlToMarkdown(html) {
       .join('');
   return walk(d).replace(/\n{3,}/g, '\n\n').trim();
 }
-
-export function exportMarkdown(p, { includeNotes = false } = {}) {
-  const root = p.nodes.root;
-  const lines = [`# ${root.title}`];
-  if (p.author) lines.push(`*by ${p.author}*`);
-  lines.push('');
-  const depthHeading = { part: '#', chapter: '##', section: '###' };
-  for (const { node } of flatten(p)) {
-    const h = depthHeading[node.type] || '###';
-    lines.push(`${h}# ${node.title}`, '');
-    if (includeNotes && node.synopsis) lines.push(`> **Synopsis:** ${node.synopsis}`, '');
-    if (includeNotes && node.purpose) lines.push(`> **Purpose:** ${node.purpose}`, '');
-    const md = htmlToMarkdown(node.content);
-    if (md) lines.push(md, '');
-  }
-  return lines.join('\n');
-}

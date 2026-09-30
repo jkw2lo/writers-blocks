@@ -5,6 +5,7 @@ import { dealPrompt } from './prompts.js';
 import * as Sound from './sound.js';
 import { confetti } from './celebrate.js';
 import { openHelp, startTour } from './help.js';
+import * as X from './export.js';
 
 // ---- state -------------------------------------------------------------------
 
@@ -32,13 +33,15 @@ const state = {
   canvasScroll: null,
   shelf: [], // recent projects, for the welcome screen (Chromium only)
   session: null, // this sitting's progress: see startSession()
+  multi: new Set(), // blocks selected together in the outline (⌘/Ctrl- or Shift-click)
+  anchor: null, // where a Shift-click range starts
 };
 
 // Per-device preferences only (never manuscript data).
 const prefs = loadPrefs();
 function loadPrefs() {
   const d = { skin: 'studio', type: {}, typeCss: null, theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10,
-    toured: false, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
+    toured: false, inspector: true, exportPrefs: null, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
   try { return { ...d, ...JSON.parse(localStorage.getItem('wb-prefs') || '{}') }; } catch { return d; }
 }
 function savePrefs() {
@@ -101,6 +104,10 @@ const ICONS = {
   center: 'M4 12h16M8 6h8M8 18h8M2 9v6M22 9v6',
   fade: 'M4 6h10M4 12h16M4 18h8',
   help: 'M12 21a9 9 0 100-18 9 9 0 000 18zM9.5 9.2a2.6 2.6 0 015 .6c0 1.7-2.5 2.1-2.5 3.7M12 17h.01',
+  panel: 'M4 5h16v14H4zM15 5v14',
+  more: 'M6 12h.01M12 12h.01M18 12h.01',
+  print: 'M7 9V4h10v5M7 17H5a1 1 0 01-1-1v-5a2 2 0 012-2h12a2 2 0 012 2v5a1 1 0 01-1 1h-2M7 14h10v6H7z',
+  share: 'M12 15V4M8 8l4-4 4 4M5 13v6h14v-6',
 };
 function icon(name, cls = '') {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -338,9 +345,115 @@ async function cmdSample() {
 
 function cmdExport(kind) {
   const base = S.slug(P().nodes.root.title);
-  if (kind === 'md') S.download(`${base}.md`, M.exportMarkdown(P()), 'text/markdown');
-  if (kind === 'md-notes') S.download(`${base}-with-notes.md`, M.exportMarkdown(P(), { includeNotes: true }), 'text/markdown');
   if (kind === 'json') S.download(`${base}-copy-${new Date().toISOString().slice(0, 10)}.wblocks.json`, serialize());
+}
+
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+
+// ---- export dialog -------------------------------------------------------------------------
+// Pick what (manuscript, working draft, outline, snapshot) and from where, see it live,
+// then save it in whichever format suits: print/PDF, Word, Markdown, text or a web page.
+
+function openExport({ kind: startKind } = {}) {
+  const saved = prefs.exportPrefs || {};
+  let kind = startKind || saved.kind || 'manuscript';
+  const optsFor = (k) => ({ ...X.defaults(k), ...(saved.opts?.[k] || {}) });
+  let opts = optsFor(kind);
+  let scope = state.selectedId !== 'root' && P().nodes[state.selectedId]?.children.length && saved.scope === state.selectedId ? state.selectedId : 'root';
+  const remember = () => {
+    prefs.exportPrefs = { kind, scope, opts: { ...(prefs.exportPrefs?.opts || {}), [kind]: opts } };
+    savePrefs();
+  };
+  const accent = () => {
+    const c = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    const m = /^#([0-9a-f]{6})$/i.exec(c);
+    if (!m) return '#b4532a';
+    const n = parseInt(m[1], 16);
+    const light = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+    return light > 190 ? '#6b645a' : c; // a near-white accent (dark skins) would vanish on paper
+  };
+  const doc = () => X.build(P(), kind, opts, scope);
+
+  const dlg = h('dialog', { class: 'export' });
+  const frame = h('iframe', { class: 'export-frame', title: 'Preview', tabindex: -1 });
+  const preview = h('div', { class: 'export-preview' }, frame);
+  const kindsBox = h('div', { class: 'export-kinds', role: 'radiogroup', 'aria-label': 'What to export' });
+  const optsBox = h('div', { class: 'export-opts' });
+  let timer;
+  const refresh = () => { clearTimeout(timer); timer = setTimeout(() => { frame.srcdoc = X.toHTML(doc(), { accent: accent(), preview: true }); }, 80); };
+  const fit = () => {
+    const s = Math.min(1, (preview.clientWidth - 2) / 860);
+    frame.style.transform = `scale(${s})`;
+    frame.style.height = `${preview.clientHeight / s}px`;
+  };
+  const update = () => { refresh(); remember(); };
+
+  const check = (key, label) => h('label', { class: 'check' },
+    h('input', { type: 'checkbox', checked: !!opts[key], onchange: (e) => { opts[key] = e.target.checked; update(); } }), label);
+  const seg = (key, choices) => h('div', { class: 'seg-control' }, choices.map(([v, l]) => h('button', {
+    class: opts[key] === v ? 'active' : '',
+    onclick: (e) => { opts[key] = v; e.currentTarget.parentNode.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === e.currentTarget)); update(); paintOpts(); },
+  }, l)));
+  const field = (label, control, hint) => h('div', { class: 'export-field' }, h('span', { class: 'field-label' }, label), control, hint && h('span', { class: 'muted small' }, hint));
+
+  const paintKinds = () => kindsBox.replaceChildren(...Object.entries(X.KINDS).map(([id, k]) => h('button', {
+    class: `export-kind ${id === kind ? 'on' : ''}`, role: 'radio', 'aria-checked': String(id === kind),
+    onclick: () => { kind = id; opts = optsFor(id); paintKinds(); paintOpts(); update(); },
+  }, h('strong', null, k.label), h('span', null, k.who))));
+
+  const paintOpts = () => {
+    const from = h('select', { onchange: (e) => { scope = e.target.value; update(); } },
+      h('option', { value: 'root', selected: scope === 'root' }, 'The whole book'),
+      M.flatten(P()).filter(({ node }) => node.children.length).map(({ node, depth }) =>
+        h('option', { value: node.id, selected: scope === node.id }, `${'\u2003'.repeat(depth + 1)}${node.title}`)));
+    const parts = [field('From', from)];
+    if (kind === 'manuscript' || kind === 'draft') {
+      parts.push(field('Layout', seg('layout', [['reading', 'Reading copy'], ['editing', 'For marking up']]),
+        opts.layout === 'editing' ? 'Double-spaced, with wide margins for your pen.' : 'Comfortable to read, like a proof copy.'));
+    }
+    if (kind === 'manuscript') parts.push(check('titlePage', 'Title page'), check('chapterBreaks', 'Start each chapter on a new page'), check('sectionTitles', 'Show section titles (otherwise a break between scenes)'));
+    if (kind === 'draft') parts.push(check('titlePage', 'Title page'), check('notes', 'Include your notes'), check('ideas', 'Include ideas attached to blocks'), check('placeholders', 'Lined space for blocks not written yet'));
+    if (kind === 'outline' || kind === 'snapshot') parts.push(field('Detail', seg('depth', [['part', 'Parts'], ['chapter', 'Chapters'], ['all', 'Everything']])));
+    if (kind === 'outline') parts.push(check('what', 'What happens'), check('why', 'Why it’s here'), check('stats', 'Status and word counts'));
+    if (kind === 'snapshot') {
+      const written = M.flatten(P()).map((x) => x.node).filter((n) => n.content);
+      parts.push(check('stats', 'Progress and word counts'), field('Excerpt', h('select', { onchange: (e) => { opts.excerpt = e.target.value; update(); } },
+        h('option', { value: 'auto', selected: opts.excerpt === 'auto' }, 'The longest piece you’ve written'),
+        h('option', { value: 'none', selected: opts.excerpt === 'none' }, 'No excerpt'),
+        written.map((n) => h('option', { value: n.id, selected: opts.excerpt === n.id }, n.title)))));
+    }
+    optsBox.replaceChildren(...parts);
+  };
+
+  const base = () => [P().nodes.root.title, scope !== 'root' && P().nodes[scope]?.title, X.KINDS[kind].label].filter(Boolean).map(S.slug).join('-');
+  const exportAs = (f) => {
+    const d = doc();
+    if (f === 'print') return X.printHTML(X.toHTML(d, { accent: accent() }));
+    if (f === 'html') S.download(`${base()}.html`, X.toHTML(d, { accent: accent() }), 'text/html');
+    if (f === 'md') S.download(`${base()}.md`, X.toMarkdown(d), 'text/markdown');
+    if (f === 'txt') S.download(`${base()}.txt`, X.toText(d), 'text/plain');
+    if (f === 'docx') S.download(`${base()}.docx`, X.toDocx(d), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    toast(`Saved your ${X.KINDS[kind].label.toLowerCase()} to your downloads.`);
+  };
+
+  const close = () => dlg.close();
+  dlg.append(
+    h('div', { class: 'dlg-head' }, h('h2', null, 'Export'), h('button', { class: 'icon-btn', onclick: close, title: 'Close' }, icon('close'))),
+    h('div', { class: 'export-body' },
+      h('div', { class: 'export-side' }, kindsBox, optsBox),
+      preview),
+    h('div', { class: 'export-foot' },
+      X.FORMATS.map((f) => h('button', { class: `btn ${f.id === 'print' ? 'primary' : ''}`, onclick: () => exportAs(f.id) },
+        f.id === 'print' && icon('print'), f.label, f.ext && h('span', { class: 'ext' }, f.ext)))),
+  );
+  dlg.addEventListener('close', () => { removeEventListener('resize', fit); dlg.remove(); });
+  addEventListener('resize', fit);
+  document.body.append(dlg);
+  paintKinds();
+  paintOpts();
+  dlg.showModal();
+  fit();
+  refresh();
 }
 
 // ---- changes made elsewhere ------------------------------------------------------
@@ -430,6 +543,7 @@ function startSession() {
   const nodeWords = {};
   for (const { node } of M.flatten(p)) nodeWords[node.id] = M.treeWords(p, node.id);
   const total = M.treeWords(p);
+  state.multi.clear();
   state.session = { start: Date.now(), baseWords: total, lastTotal: total, nodeWords, touched: new Set(), hit: new Set(), milestones: [], done: [] };
 }
 
@@ -555,11 +669,11 @@ const showHelp = (section) => openHelp({ section, onTour: state.project ? runTou
 
 const TOUR = [
   { el: null, title: 'Welcome to Writers Blocks', text: 'Here’s a one-minute look around. Use the arrow keys or the buttons, and press Esc to skip. You can replay this from Help any time.' },
-  { el: '.binder .tree', title: 'The outline', text: 'Your book as a tree of parts, chapters and sections. Click a block to open it, drag to rearrange, or hover and click <b>+</b> to add inside. The dot shows its status.' },
+  { el: '.binder .tree', title: 'The outline', text: 'Your book as a tree of parts, chapters and sections. Click a block to open it, drag to rearrange (a line shows where it will land), or hover and click <b>+</b> to add inside. Right-click any block for more: rename, move, change its kind, delete.' },
   { el: '.tabs', title: 'Four ways to look at it', text: '<b>Write</b> one block at a time. <b>Board</b> shows a chapter as index cards. <b>Outline</b> is the whole book as a table. <b>Notebook</b> holds loose ideas.' },
   { el: '.direction', title: 'Every block has a direction', text: '<b>What happens</b> and <b>Why it’s here</b> keep you pointed somewhere. Below them are the blocks just before and after, so you know what you’re writing toward.' },
   { el: '.toolbar', title: 'The writing toolbar', text: 'Formatting, and <b>Split here</b> to break a block in two. On the right are your writing aids: typing sounds, typewriter scrolling, and fade the rest.' },
-  { el: '.inspector', title: 'This block, and ideas', text: 'Set a block’s status and word target, add tags and notes, and move it around. Further down, <b>Brainstorm</b> deals prompts, runs freewriting sprints, and collides ideas.' },
+  { el: '.inspector', title: 'This block, and ideas', text: 'Set a block’s status and word target, add tags and notes, and move it around. Further down, <b>Brainstorm</b> deals prompts, runs freewriting sprints, and collides ideas. Hide this panel with the panel button in the top bar when you want quiet.' },
   { el: '#status', title: 'Progress and saving', text: 'The ring fills toward your book’s word target, and <b>+N this session</b> counts this sitting. Your file’s save status is here too.' },
   { el: '.look', title: 'Make it yours', text: 'Skins for every mood, light or dark, and your own fonts and line spacing.' },
   { el: '.help-btn', title: 'Help is always here', text: 'The quick start, a guide to every feature, and this tour. Press <b>?</b> any time you’re not typing.' },
@@ -690,20 +804,29 @@ function select(id, view) {
   render();
 }
 
+// Adding a block keeps you where you are: it appears in the outline with its name
+// ready to type, so you can sketch the big pieces without being pulled into one.
 function addChild(parentId, type) {
   snapshot();
   const n = M.addNode(P(), parentId, type);
   changed();
-  select(n.id, state.view === 'notebook' ? 'write' : state.view);
-  focusTitle();
+  afterAdd(n);
+  return n;
 }
 
 function addAfter(id) {
   snapshot();
   const n = M.addSiblingAfter(P(), id);
   changed();
-  select(n.id);
-  focusTitle();
+  afterAdd(n);
+  return n;
+}
+
+function afterAdd(n) {
+  render();
+  const card = state.view === 'board' && document.querySelector(`.card[data-id="${n.id}"] .card-title`);
+  if (card) { card.focus(); card.select(); return; }
+  if (!startRename(n.id, { fresh: true })) toast(`Added “${n.title}” to “${M.parentOf(P(), n.id).title}”.`, { undo: true });
 }
 
 function focusTitle() {
@@ -714,18 +837,56 @@ function focusTitle() {
   });
 }
 
-function removeNode(id) {
-  const n = P().nodes[id];
-  const words = M.treeWords(P(), id);
-  const kids = n.children.length;
-  if ((words > 0 || kids > 0) && !confirm(`Delete “${n.title}”${kids ? ` and its ${kids} block${kids > 1 ? 's' : ''}` : ''}${words ? ` (${fmt(words)} words)` : ''}?`)) return;
+// The outermost of the given blocks (drop any that sit inside another), in book order.
+function outermost(ids) {
+  const set = new Set(ids);
+  return M.flatten(P()).map((x) => x.node.id).filter((id) => set.has(id) && !M.ancestors(P(), id).some((a) => set.has(a.id)));
+}
+
+function removeNodes(ids) {
+  const p = P();
+  ids = outermost(ids.filter((id) => id !== 'root'));
+  if (!ids.length) return;
+  const words = ids.reduce((sum, id) => sum + M.treeWords(p, id), 0);
+  const inside = ids.reduce((sum, id) => sum + M.flatten(p, id).length, 0);
+  const name = ids.length === 1 ? `“${p.nodes[ids[0]].title}”` : `${ids.length} blocks`;
+  if ((words > 0 || inside > 0) && !confirm(`Delete ${name}${inside ? ` and ${inside} block${inside > 1 ? 's' : ''} inside` : ''}${words ? ` (${fmt(words)} words)` : ''}? You can undo this.`)) return;
   snapshot();
-  const parent = M.parentOf(P(), id);
-  M.deleteNode(P(), id);
-  delete state.aiResults[id];
+  const fallback = M.parentOf(p, ids[0])?.id || 'root';
+  for (const id of ids) { M.deleteNode(p, id); delete state.aiResults[id]; }
+  state.multi.clear();
+  if (!p.nodes[state.selectedId]) state.selectedId = p.nodes[fallback] ? fallback : 'root';
   changed();
-  select(parent?.id || 'root');
-  toast(`Deleted “${n.title}”.`, { undo: true });
+  render();
+  toast(`Deleted ${name}.`, { undo: true });
+}
+const removeNode = (id) => removeNodes([id]);
+
+function setKind(ids, type) {
+  snapshot();
+  ids.forEach((id) => (P().nodes[id].type = type));
+  changed();
+  render();
+  toast(`${ids.length > 1 ? `${ids.length} blocks are` : `“${P().nodes[ids[0]].title}” is`} now ${ids.length > 1 ? `${M.TYPES[type].label.toLowerCase()}s` : `a ${M.TYPES[type].label.toLowerCase()}`}.`, { undo: true });
+}
+
+function setStatus(ids, status) {
+  const finished = ids.map((id) => P().nodes[id]).filter((n) => status === 'done' && n.status !== 'done');
+  ids.forEach((id) => (P().nodes[id].status = status));
+  changed();
+  render();
+  if (finished.length) blockDone(finished[finished.length - 1]);
+}
+
+function moveInto(ids, parentId) {
+  const p = P();
+  ids = outermost(ids);
+  if (ids.some((id) => id === parentId || M.isDescendant(p, parentId, id))) return toast("A block can't be moved inside itself.");
+  snapshot();
+  for (const id of ids) M.moveNode(p, id, parentId, p.nodes[parentId].children.length);
+  changed();
+  render();
+  toast(`Moved ${ids.length > 1 ? `${ids.length} blocks` : `“${p.nodes[ids[0]].title}”`} into ${parentId === 'root' ? 'the top level' : `“${p.nodes[parentId].title}”`}.`, { undo: true });
 }
 
 function shift(id, dir) {
@@ -799,14 +960,17 @@ function clearDropMarks() {
   document.querySelectorAll('.drop-before,.drop-after,.drop-inside').forEach((x) => x.classList.remove('drop-before', 'drop-after', 'drop-inside'));
 }
 
+// zone: before | after (siblings), inside (last child), first (first child)
 function performDrop(targetId, zone) {
   const d = state.drag;
-  state.drag = null;
-  clearDropMarks();
+  endDrag();
   if (!d) return;
   const p = P();
   let parentId, index;
-  if (zone === 'inside' || targetId === 'root') {
+  if (zone === 'first') {
+    parentId = targetId;
+    index = 0;
+  } else if (zone === 'inside' || targetId === 'root') {
     parentId = targetId;
     index = p.nodes[targetId].children.length;
   } else {
@@ -815,26 +979,139 @@ function performDrop(targetId, zone) {
     index = parent.children.indexOf(targetId) + (zone === 'after' ? 1 : 0);
   }
   if (d.kind === 'note') return placeNote(d.id, parentId, index);
-  if (d.id === targetId) return;
+  const ids = outermost(d.ids || [d.id]);
+  if (ids.includes(targetId) && zone !== 'inside' && zone !== 'first') return; // dropped on itself
+  if (ids.some((id) => id === parentId || M.isDescendant(p, parentId, id))) return toast("A block can't be moved inside itself.");
   snapshot();
-  if (!M.moveNode(p, d.id, parentId, index)) {
-    state.undo.pop();
-    return toast("A block can't be moved inside itself.");
+  for (const id of ids) {
+    M.moveNode(p, id, parentId, index);
+    index = p.nodes[parentId].children.indexOf(id) + 1; // the next one goes right after
   }
   changed();
   render();
-  toast(`Moved “${p.nodes[d.id].title}” into “${p.nodes[parentId].title}”.`, { undo: true });
+  const where = parentId === 'root' ? 'the top level' : `“${p.nodes[parentId].title}”`;
+  toast(`Moved ${ids.length > 1 ? `${ids.length} blocks` : `“${p.nodes[ids[0]].title}”`} to ${where}.`, { undo: true });
 }
 
-function makeDraggable(el, kind, id) {
+// getIds: which blocks a drag carries (the whole multi-selection, when dragging part of it)
+function makeDraggable(el, kind, id, getIds) {
   el.draggable = true;
   el.addEventListener('dragstart', (e) => {
-    state.drag = { kind, id };
+    if (e.target.closest?.('input, textarea')) return;
+    const ids = kind === 'node' ? (getIds ? getIds() : [id]) : [];
+    state.drag = { kind, id, ids };
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', id);
-    el.classList.add('dragging');
+    if (kind === 'node') {
+      const ghost = h('div', { class: 'drag-ghost' }, ids.length > 1 ? `${ids.length} blocks` : P().nodes[id].title);
+      document.body.append(ghost);
+      e.dataTransfer.setDragImage(ghost, 14, 16);
+      setTimeout(() => ghost.remove());
+    }
+    requestAnimationFrame(() => state.drag && (ids.length ? ids : [id]).forEach((x) =>
+      document.querySelectorAll(`.row[data-id="${x}"], .card[data-id="${x}"], .note[data-note="${x}"]`).forEach((r) => r.classList.add('dragging'))));
   });
-  el.addEventListener('dragend', () => { el.classList.remove('dragging'); state.drag = null; clearDropMarks(); });
+  el.addEventListener('dragend', endDrag);
+}
+
+let expandTimer = null;
+let expandId = null;
+function endDrag() {
+  state.drag = null;
+  clearTimeout(expandTimer);
+  expandId = null;
+  clearDropMarks();
+  document.querySelector('.drop-line')?.remove();
+  document.querySelectorAll('.dragging').forEach((x) => x.classList.remove('dragging'));
+}
+// The source row can be re-rendered away mid-drag (auto-expand), so also clean up here.
+document.addEventListener('dragend', endDrag);
+
+// ---- outline drop targeting: where exactly would this land? -------------------------------
+
+function binderHit(e, tree) {
+  const d = state.drag;
+  if (!d) return null;
+  const p = P();
+  const ids = d.kind === 'node' ? d.ids : [];
+  const inDrag = (id) => ids.some((x) => x === id || M.isDescendant(p, id, x));
+  const row = e.target.closest?.('.row[data-id], .row.root');
+  if (!row) {
+    const rows = tree.querySelectorAll('.row[data-id]');
+    const last = rows[rows.length - 1];
+    const y = last ? last.getBoundingClientRect().bottom : tree.getBoundingClientRect().top + 30;
+    return { targetId: 'root', zone: 'inside', y, depth: 0, parentId: 'root' };
+  }
+  if (row.classList.contains('root')) return { targetId: 'root', zone: 'first', y: row.getBoundingClientRect().bottom, depth: 0, parentId: 'root' };
+  const id = row.dataset.id;
+  const n = p.nodes[id];
+  const depth = +row.dataset.depth;
+  if (inDrag(id)) return null;
+  const r = row.getBoundingClientRect();
+  const f = (e.clientY - r.top) / r.height;
+  if (f < 0.3) return { targetId: id, zone: 'before', y: r.top, depth, parentId: M.parentOf(p, id).id };
+  if (f > 0.7) {
+    if (n.children.length && !n.collapsed) return { targetId: id, zone: 'first', y: r.bottom, depth: depth + 1, parentId: id };
+    // At the end of a branch, the pointer's left–right position picks the level:
+    // drag left to drop after the chapter (or part) instead of after the section.
+    const want = Math.floor((e.clientX - tree.getBoundingClientRect().left - 10) / 16);
+    let cur = n;
+    let curDepth = depth;
+    while (curDepth > want) {
+      const parent = M.parentOf(p, cur.id);
+      if (!parent || parent.id === 'root' || parent.children[parent.children.length - 1] !== cur.id) break;
+      cur = parent;
+      curDepth -= 1;
+    }
+    return { targetId: cur.id, zone: 'after', y: r.bottom, depth: curDepth, parentId: M.parentOf(p, cur.id).id };
+  }
+  return { targetId: id, zone: 'inside', row, y: r.top + r.height / 2, depth, parentId: id };
+}
+
+function showDropLine(tree, hit) {
+  clearDropMarks();
+  let line = tree.querySelector('.drop-line');
+  if (!hit) { line?.remove(); return; }
+  if (!line) {
+    line = h('div', { class: 'drop-line', 'aria-hidden': 'true' }, h('span', { class: 'drop-label' }));
+    tree.append(line);
+  }
+  const p = P();
+  const tr = tree.getBoundingClientRect();
+  const inside = hit.zone === 'inside' && hit.row;
+  line.classList.toggle('inside', !!inside);
+  line.style.top = `${hit.y - tr.top + tree.scrollTop}px`;
+  line.style.left = `${inside ? 0 : 10 + hit.depth * 16}px`;
+  let label;
+  if (inside) { hit.row.classList.add('drop-inside'); label = `Into ${p.nodes[hit.targetId].title}`; }
+  else if (hit.parentId === 'root') label = hit.targetId === 'root' && hit.zone === 'inside' ? 'At the end' : 'Top level';
+  else label = `In ${p.nodes[hit.parentId].title}`;
+  line.querySelector('.drop-label').textContent = label;
+}
+
+// Hovering over a closed block while dragging opens it, so you can drop deeper.
+function hoverExpand(hit) {
+  const n = hit?.zone === 'inside' && P().nodes[hit.targetId];
+  const want = n && n.collapsed && n.children.length ? n.id : null;
+  if (expandId === want) return;
+  clearTimeout(expandTimer);
+  expandId = want;
+  if (!want) return;
+  expandTimer = setTimeout(() => {
+    expandId = null;
+    n.collapsed = false;
+    changed();
+    renderBinderOnly();
+  }, 650);
+}
+
+function renderBinderOnly() {
+  const old = document.querySelector('.binder');
+  if (!old) return;
+  const top = old.querySelector('.tree')?.scrollTop;
+  const fresh = renderBinder();
+  old.replaceWith(fresh);
+  if (top != null) fresh.querySelector('.tree').scrollTop = top;
 }
 
 function makeDropTarget(el, id, { allowInside = true, horizontal = false } = {}) {
@@ -861,6 +1138,7 @@ function render() {
   document.documentElement.style.setProperty('--editor-size', `${prefs.fontSize}px`);
   if (!state.project) return renderWelcome();
   document.body.classList.toggle('focus', state.focus);
+  document.body.classList.toggle('no-inspector', !prefs.inspector);
   const scroll = document.querySelector('.main')?.scrollTop;
   const binderScroll = document.querySelector('.tree')?.scrollTop;
   app.replaceChildren(
@@ -964,6 +1242,10 @@ function renderTopbar() {
     h('div', { class: 'spacer' }),
     h('div', { id: 'status', class: 'status' }),
     lookMenu(),
+    h('button', {
+      class: `icon-btn panel-btn ${prefs.inspector ? 'on' : ''}`, 'aria-pressed': String(prefs.inspector),
+      title: `${prefs.inspector ? 'Hide' : 'Show'} the side panel (${MOD}\\)`, onclick: toggleInspector,
+    }, icon('panel')),
     h('button', { class: 'icon-btn help-btn', title: 'Help & tour (?)', onclick: () => showHelp() }, icon('help')),
     h('button', { class: 'icon-btn', title: 'Focus mode (Ctrl/⌘ + .)', onclick: toggleFocus }, icon('focus')),
     h('button', { class: 'icon-btn', title: 'Settings', onclick: openSettings }, icon('gear')),
@@ -979,8 +1261,7 @@ function fileMenu() {
       item('Open…', cmdOpen),
       item(S.canAutosave ? 'Save to a new file…' : 'Save (download)', saveAs, S.canAutosave ? '' : '⌘S'),
       h('hr'),
-      item('Export manuscript (.md)', () => cmdExport('md')),
-      item('Export with synopses (.md)', () => cmdExport('md-notes')),
+      item('Export or print…', () => openExport(), `${MOD}E`),
       item('Download a backup copy', () => cmdExport('json')),
       h('hr'),
       item('Close project', closeProject),
@@ -1057,9 +1338,31 @@ function renderBinder() {
 
   const rootRow = h('div', {
     class: `row root ${state.selectedId === 'root' && state.view !== 'notebook' ? 'selected' : ''}`,
-    onclick: () => select('root', state.view === 'notebook' ? 'write' : state.view),
+    onclick: () => { state.multi.clear(); select('root', state.view === 'notebook' ? 'write' : state.view); },
   }, icon('book', 'type-icon'), h('span', { class: 'row-title', 'data-root-title': '' }, p.nodes.root.title));
-  makeDropTarget(rootRow, 'root');
+
+  const tree = h('div', { class: 'tree', role: 'tree', 'aria-multiselectable': 'true' }, rootRow, rows,
+    q && !rows.length && h('p', { class: 'empty small' }, 'Nothing matches.'),
+    !q && h('button', { class: 'add-row', onclick: () => addChild('root', 'part') }, icon('plus'), 'Add part'));
+  tree.addEventListener('dragover', (e) => {
+    if (!state.drag) return;
+    e.preventDefault();
+    const r = tree.getBoundingClientRect();
+    if (e.clientY < r.top + 36) tree.scrollTop -= 10;
+    else if (e.clientY > r.bottom - 36) tree.scrollTop += 10;
+    const hit = binderHit(e, tree);
+    e.dataTransfer.dropEffect = hit ? 'move' : 'none';
+    showDropLine(tree, hit);
+    hoverExpand(hit);
+  });
+  tree.addEventListener('dragleave', (e) => { if (!tree.contains(e.relatedTarget)) showDropLine(tree, null); });
+  tree.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const hit = binderHit(e, tree);
+    if (hit) performDrop(hit.targetId, hit.zone);
+    else endDrag();
+  });
+  tree.addEventListener('keydown', treeKeys);
 
   return h('aside', { class: 'binder' },
     h('div', { class: 'binder-search' }, icon('search'),
@@ -1067,9 +1370,8 @@ function renderBinder() {
         type: 'search', placeholder: 'Find in book…', value: state.filter, 'aria-label': 'Find in book',
         oninput: (e) => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const i = document.querySelector('.binder-search input'); i.focus(); i.setSelectionRange(pos, pos); },
       })),
-    h('div', { class: 'tree', role: 'tree' }, rootRow, rows,
-      q && !rows.length && h('p', { class: 'empty small' }, 'Nothing matches.'),
-      !q && h('button', { class: 'add-row', onclick: () => addChild('root', 'part') }, icon('plus'), 'Add part')),
+    tree,
+    multiBar(),
     h('button', {
       class: `row notebook-link ${state.view === 'notebook' ? 'selected' : ''}`,
       onclick: () => { state.view = 'notebook'; render(); },
@@ -1079,14 +1381,21 @@ function renderBinder() {
 
 function binderRow(n, depth) {
   const hasKids = n.children.length > 0;
+  const selected = n.id === state.selectedId && state.view !== 'notebook';
+  const inMulti = state.multi.size > 1 && state.multi.has(n.id);
   const row = h('div', {
-    class: `row type-${n.type} ${n.id === state.selectedId && state.view !== 'notebook' ? 'selected' : ''}`,
+    class: `row type-${n.type} ${selected ? 'selected' : ''} ${inMulti ? 'multi' : ''}`,
     style: `--depth:${depth}`,
     'data-id': n.id,
+    'data-depth': depth,
     role: 'treeitem',
+    tabindex: selected ? 0 : -1,
+    'aria-selected': String(selected || inMulti),
     'aria-expanded': hasKids ? String(!n.collapsed) : null,
     title: n.synopsis || n.title,
-    onclick: () => select(n.id, state.view === 'notebook' ? 'write' : state.view),
+    onclick: (e) => rowClick(e, n.id),
+    ondblclick: (e) => { if (!e.target.closest('button')) startRename(n.id); },
+    oncontextmenu: (e) => { e.preventDefault(); openBlockMenu(n.id, { x: e.clientX, y: e.clientY }); },
   },
   h('button', {
     class: `caret ${hasKids ? '' : 'hidden'} ${n.collapsed ? '' : 'open'}`, 'aria-label': n.collapsed ? 'Expand' : 'Collapse',
@@ -1095,13 +1404,283 @@ function binderRow(n, depth) {
   h('span', { class: `dot status-${n.status}`, title: n.status }),
   h('span', { class: 'row-title' }, n.title),
   h('span', { class: 'wc', 'data-wc': n.id }, fmt(M.treeWords(P(), n.id))),
-  h('button', {
-    class: 'row-add', title: `Add ${M.TYPES[M.TYPES[n.type].child].label.toLowerCase()} inside`,
-    onclick: (e) => { e.stopPropagation(); addChild(n.id); },
-  }, icon('plus')));
-  makeDraggable(row, 'node', n.id);
-  makeDropTarget(row, n.id);
+  h('span', { class: 'row-actions' },
+    h('button', {
+      class: 'row-btn', title: `Add ${M.TYPES[M.TYPES[n.type].child].label.toLowerCase()} inside`, tabindex: -1,
+      onclick: (e) => { e.stopPropagation(); addChild(n.id); },
+    }, icon('plus')),
+    h('button', {
+      class: 'row-btn', title: 'More: rename, move, change kind, delete…', tabindex: -1,
+      onclick: (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); openBlockMenu(n.id, { x: r.left, y: r.bottom + 4 }); },
+    }, icon('more'))));
+  makeDraggable(row, 'node', n.id, () => carried(n.id));
   return row;
+}
+
+// ---- outline selection, rename & keys ------------------------------------------------------
+
+// The blocks an action on this row applies to: the multi-selection if it's part of it.
+const carried = (id) => (state.multi.size > 1 && state.multi.has(id) ? outermost([...state.multi]) : [id]);
+
+function rowClick(e, id) {
+  if (e.target.closest('button, input')) return;
+  if (e.metaKey || e.ctrlKey) {
+    if (!state.multi.size && state.selectedId !== 'root') state.multi.add(state.selectedId);
+    if (state.multi.has(id)) state.multi.delete(id); else state.multi.add(id);
+    state.anchor = id;
+    return paintMulti();
+  }
+  if (e.shiftKey) {
+    const order = [...document.querySelectorAll('.tree .row[data-id]')].map((r) => r.dataset.id);
+    const a = order.indexOf(state.anchor || state.selectedId);
+    const b = order.indexOf(id);
+    if (a >= 0 && b >= 0) {
+      state.multi = new Set(order.slice(Math.min(a, b), Math.max(a, b) + 1));
+      return paintMulti();
+    }
+  }
+  selectRow(id);
+}
+
+function selectRow(id) {
+  state.multi.clear();
+  state.anchor = id;
+  if (id !== state.selectedId || state.view === 'notebook') select(id, state.view === 'notebook' ? 'write' : state.view);
+  else paintMulti();
+  document.querySelector(`.tree .row[data-id="${id}"]`)?.focus({ preventScroll: true });
+}
+
+function paintMulti() {
+  const on = state.multi.size > 1;
+  document.querySelectorAll('.tree .row[data-id]').forEach((r) => {
+    const m = on && state.multi.has(r.dataset.id);
+    r.classList.toggle('multi', m);
+    r.setAttribute('aria-selected', String(m || r.classList.contains('selected')));
+  });
+  document.querySelector('.multi-bar')?.replaceWith(multiBar());
+}
+
+function multiBar() {
+  if (state.multi.size < 2) return h('div', { class: 'multi-bar', hidden: true });
+  const ids = outermost([...state.multi]);
+  return h('div', { class: 'multi-bar' },
+    h('span', null, `${state.multi.size} selected`),
+    h('button', { class: 'link', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu({ x: r.left, y: r.top }, blockMenuItems(ids), { above: true }); } }, 'Actions…'),
+    h('button', { class: 'icon-btn small', title: 'Delete selected', onclick: () => removeNodes(ids) }, icon('trash')),
+    h('button', { class: 'icon-btn small', title: 'Clear selection (Esc)', onclick: () => { state.multi.clear(); paintMulti(); } }, icon('close')));
+}
+
+// Make sure a block's row is visible in the outline (open its parents, clear a search).
+function revealRow(id) {
+  let changedAny = false;
+  for (const a of M.ancestors(P(), id)) if (a.collapsed) { a.collapsed = false; changedAny = true; }
+  if (state.filter) { state.filter = ''; changedAny = true; }
+  if (changedAny) render();
+  return document.querySelector(`.tree .row[data-id="${id}"]`);
+}
+
+// Rename in place in the outline. Returns false if the outline isn't showing.
+function startRename(id, { fresh = false } = {}) {
+  const row = revealRow(id);
+  if (!row || !row.offsetParent) return false;
+  const n = P().nodes[id];
+  const span = row.querySelector('.row-title');
+  const input = h('input', { class: 'row-rename', value: n.title, 'aria-label': `Name this ${M.TYPES[n.type].label.toLowerCase()}`, spellcheck: false });
+  span.replaceWith(input);
+  row.draggable = false;
+  row.classList.add('renaming');
+  if (fresh) row.classList.add('just-added');
+  row.scrollIntoView({ block: 'nearest' });
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (commit && v && v !== n.title) { n.title = v; changed(); }
+    render();
+    document.querySelector(`.tree .row[data-id="${id}"]`)?.focus({ preventScroll: true });
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('dblclick', (e) => e.stopPropagation());
+  return true;
+}
+
+function treeKeys(e) {
+  if (e.target.closest('input')) return;
+  const row = e.target.closest('.row[data-id]');
+  if (!row) return;
+  const id = row.dataset.id;
+  const n = P().nodes[id];
+  const rows = [...e.currentTarget.querySelectorAll('.row[data-id]')];
+  const i = rows.indexOf(row);
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeNodes(carried(id)); }
+  else if (e.key === 'F2' || e.key === 'Enter') { e.preventDefault(); startRename(id); }
+  else if (e.key === 'Escape' && state.multi.size) { state.multi.clear(); paintMulti(); }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const next = rows[i + (e.key === 'ArrowDown' ? 1 : -1)];
+    if (!next) return;
+    if (e.shiftKey) {
+      if (!state.multi.size) state.multi.add(id);
+      state.multi.add(next.dataset.id);
+      paintMulti();
+      next.focus();
+    } else selectRow(next.dataset.id);
+  } else if ((e.key === 'ArrowRight' && n.collapsed) || (e.key === 'ArrowLeft' && !n.collapsed && n.children.length)) {
+    e.preventDefault();
+    n.collapsed = e.key === 'ArrowLeft';
+    changed();
+    render();
+    document.querySelector(`.tree .row[data-id="${id}"]`)?.focus();
+  } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+    e.preventDefault();
+    const r = row.getBoundingClientRect();
+    openBlockMenu(id, { x: r.left + 30, y: r.bottom });
+  }
+}
+
+// ---- context menus -------------------------------------------------------------------------
+
+function openBlockMenu(id, at) {
+  if (!(state.multi.size > 1 && state.multi.has(id))) { state.multi.clear(); paintMulti(); }
+  const ids = carried(id);
+  const rows = ids.map((x) => document.querySelector(`.tree .row[data-id="${x}"]`)).filter(Boolean);
+  rows.forEach((r) => r.classList.add('ctx-target'));
+  contextMenu(at, blockMenuItems(ids), { onClose: () => rows.forEach((r) => r.classList.remove('ctx-target')) });
+}
+
+function blockMenuItems(ids) {
+  const p = P();
+  const nodes = ids.map((id) => p.nodes[id]).filter(Boolean);
+  const one = nodes.length === 1 ? nodes[0] : null;
+  const label = (t) => M.TYPES[t].label.toLowerCase();
+  const items = [];
+  if (one) {
+    items.push({ label: 'Open', run: () => { state.multi.clear(); select(one.id, 'write'); } });
+    if (one.children.length) items.push({ label: 'Open as board', run: () => select(one.id, 'board') });
+    items.push({ label: 'Rename', hint: 'F2', run: () => startRename(one.id) || focusTitle() });
+    items.push('sep',
+      { label: `Add ${label(M.TYPES[one.type].child)} inside`, icon: 'plus', run: () => addChild(one.id) },
+      { label: `Add ${label(one.type)} after`, run: () => addAfter(one.id) },
+      'sep');
+  } else {
+    items.push({ label: `${nodes.length} blocks selected`, disabled: true }, 'sep');
+  }
+  items.push({
+    label: 'Turn into',
+    sub: ['part', 'chapter', 'section'].map((t) => ({ label: M.TYPES[t].label, checked: nodes.every((n) => n.type === t), run: () => setKind(ids, t) })),
+  });
+  items.push({ label: 'Move to', sub: () => moveTargets(ids) });
+  items.push({
+    label: 'Status',
+    sub: M.STATUSES.map((st) => ({ label: st.label, dot: st.id, checked: nodes.every((n) => n.status === st.id), run: () => setStatus(ids, st.id) })),
+  });
+  if (one) {
+    const parent = M.parentOf(p, one.id);
+    const i = parent.children.indexOf(one.id);
+    items.push('sep',
+      { label: 'Move up', disabled: i === 0, run: () => shift(one.id, -1) },
+      { label: 'Move down', disabled: i === parent.children.length - 1, run: () => shift(one.id, 1) },
+      { label: 'Merge with next', disabled: i === parent.children.length - 1, run: () => mergeNext(one.id) });
+  }
+  items.push('sep', { label: nodes.length > 1 ? `Delete ${nodes.length} blocks` : 'Delete', icon: 'trash', danger: true, hint: '⌫', run: () => removeNodes(ids) });
+  return items;
+}
+
+function moveTargets(ids) {
+  const p = P();
+  const moving = (id) => ids.some((x) => x === id || M.isDescendant(p, id, x));
+  const already = (pid) => ids.every((x) => M.parentOf(p, x)?.id === pid);
+  return [
+    { label: 'Top level of the book', icon: 'book', disabled: already('root'), run: () => moveInto(ids, 'root') },
+    'sep',
+    ...M.flatten(p).filter(({ node }) => !moving(node.id)).map(({ node, depth }) => ({
+      label: node.title, indent: depth, dot: node.status, disabled: already(node.id), run: () => moveInto(ids, node.id),
+    })),
+  ];
+}
+
+// A small menu at a point. items: { label, run, sub (items or a function), icon, dot,
+// checked, hint, danger, disabled, indent } or 'sep'. Arrow keys, Enter and Esc work.
+let closeCtx = null;
+function contextMenu(at, items, { onClose, above = false } = {}) {
+  closeCtx?.();
+  const menus = [];
+  const close = () => {
+    menus.forEach((m) => m.remove());
+    menus.length = 0;
+    document.removeEventListener('pointerdown', outside, true);
+    document.removeEventListener('keydown', keys, true);
+    removeEventListener('blur', close);
+    removeEventListener('resize', close);
+    closeCtx = null;
+    onClose?.();
+  };
+  const outside = (e) => { if (!menus.some((m) => m.contains(e.target))) close(); };
+  const build = (list, x, y, level, opener = null) => {
+    while (menus.length > level) menus.pop().remove();
+    const m = h('div', { class: 'ctx', role: 'menu' });
+    m.opener = opener;
+    for (const it of typeof list === 'function' ? list() : list) {
+      if (it === 'sep') { m.append(h('div', { class: 'ctx-sep', role: 'separator' })); continue; }
+      const b = h('button', {
+        class: `ctx-item ${it.danger ? 'danger' : ''}`, role: 'menuitem', disabled: !!it.disabled,
+        style: it.indent ? `padding-left:${10 + it.indent * 14}px` : null, 'aria-haspopup': it.sub ? 'menu' : null,
+      },
+      h('span', { class: 'ctx-icon' }, it.checked ? icon('check') : it.icon ? icon(it.icon) : it.dot ? h('span', { class: `dot status-${it.dot}` }) : ''),
+      h('span', { class: 'ctx-label' }, it.label),
+      it.hint && h('kbd', null, it.hint),
+      it.sub && h('span', { class: 'ctx-arrow' }, icon('chev')));
+      if (it.sub) {
+        b.openSub = () => { const r = b.getBoundingClientRect(); build(it.sub, r.right - 2, r.top - 5, level + 1, b); };
+        b.addEventListener('pointerenter', b.openSub);
+        b.addEventListener('click', () => { b.openSub(); menus[level + 1]?.querySelector('.ctx-item:not(:disabled)')?.focus(); });
+      } else {
+        b.addEventListener('pointerenter', () => { while (menus.length > level + 1) menus.pop().remove(); if (!b.disabled) b.focus({ preventScroll: true }); });
+        b.addEventListener('click', () => { close(); it.run?.(); });
+      }
+      m.append(b);
+    }
+    document.body.append(m);
+    const w = m.offsetWidth;
+    const ht = m.offsetHeight;
+    let left = x;
+    let top = above && level === 0 ? y - ht - 4 : y;
+    if (left + w > innerWidth - 8) left = opener ? opener.getBoundingClientRect().left - w + 2 : innerWidth - w - 8;
+    if (top + ht > innerHeight - 8) top = innerHeight - ht - 8;
+    m.style.left = `${Math.max(8, left)}px`;
+    m.style.top = `${Math.max(8, top)}px`;
+    menus.push(m);
+    return m;
+  };
+  const keys = (e) => {
+    const level = Math.max(0, menus.findIndex((m) => m.contains(document.activeElement)));
+    const m = menus[level];
+    const list = [...m.querySelectorAll('.ctx-item:not(:disabled)')];
+    const i = list.indexOf(document.activeElement);
+    const back = () => { const sub = menus.pop(); sub.remove(); sub.opener?.focus(); };
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (level > 0) back(); else close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+    else if (e.key === 'ArrowRight' && document.activeElement?.openSub) { e.preventDefault(); document.activeElement.openSub(); menus[level + 1]?.querySelector('.ctx-item:not(:disabled)')?.focus(); }
+    else if (e.key === 'ArrowLeft' && level > 0) { e.preventDefault(); back(); }
+    else if (e.key === 'Tab') e.preventDefault();
+  };
+  build(items, at.x, at.y, 0);
+  menus[0].querySelector('.ctx-item:not(:disabled)')?.focus({ preventScroll: true });
+  setTimeout(() => document.addEventListener('pointerdown', outside, true));
+  document.addEventListener('keydown', keys, true);
+  addEventListener('blur', close);
+  addEventListener('resize', close);
+  closeCtx = close;
 }
 
 // ---- render: main views ------------------------------------------------------------
@@ -1182,7 +1761,8 @@ function renderWrite() {
       h('input', {
         class: 'title-input', value: n.title, 'aria-label': 'Title',
         oninput: (e) => { n.title = e.target.value; changed(); document.querySelector(`.row[data-id="${n.id}"] .row-title`)?.replaceChildren(n.title); },
-      })),
+      }),
+      h('button', { class: 'icon-btn title-more', title: 'More: move, change kind, delete…', 'aria-label': 'More actions', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu({ x: r.left, y: r.bottom + 4 }, blockMenuItems([n.id])); } }, icon('more'))),
     direction,
     kids.length > 0 && h('div', { class: 'contains' },
       h('div', { class: 'contains-head' }, `This ${typeLabel} contains`, h('button', { class: 'link', onclick: () => { state.view = 'board'; render(); } }, 'Open as board')),
@@ -1239,6 +1819,9 @@ function renderBookOverview() {
       field('Premise', 'The book in a few sentences. What happens, or what it argues?', root.synopsis, (v) => (root.synopsis = v), { rows: 3 }),
       field('What it’s really about', 'The question, feeling or idea underneath. What should a reader carry away?', root.purpose, (v) => (root.purpose = v), { rows: 3 }),
     ),
+    h('div', { class: 'overview-actions' },
+      h('button', { class: 'btn small', onclick: () => openExport({ kind: 'snapshot' }) }, icon('share'), 'Share your progress…'),
+      h('button', { class: 'btn small ghost', onclick: () => openExport() }, icon('print'), 'Export…')),
     h('div', { class: 'stats' },
       h('div', { class: 'stat' }, h('div', { class: 'stat-num', 'data-wc': 'root' }, fmt(total)), h('div', { class: 'stat-label' }, 'words written')),
       h('div', { class: 'stat' },
@@ -1286,7 +1869,8 @@ function boardCard(k, i) {
       h('span', { class: 'card-num' }, i + 1),
       h('span', { class: `pill status-${k.status}` }, M.STATUSES.find((s) => s.id === k.status)?.label),
       h('span', { class: 'spacer' }),
-      h('span', { class: 'wc' }, `${fmt(words)}${k.targetWords ? ` / ${fmt(k.targetWords)}` : ''} w`)),
+      h('span', { class: 'wc' }, `${fmt(words)}${k.targetWords ? ` / ${fmt(k.targetWords)}` : ''} w`),
+      h('button', { class: 'icon-btn small card-more', title: 'More: move, change kind, delete…', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); contextMenu({ x: r.left, y: r.bottom + 4 }, blockMenuItems([k.id])); } }, icon('more'))),
     h('input', { class: 'card-title', value: k.title, 'aria-label': 'Title', onfocus: () => { state.selectedId = k.id; renderInspectorOnly(); }, oninput: (e) => { k.title = e.target.value; changed(); document.querySelector(`.row[data-id="${k.id}"] .row-title`)?.replaceChildren(k.title); } }),
     autoGrow(h('textarea', { class: 'card-syn', rows: 2, placeholder: 'What happens…', value: k.synopsis, oninput: (e) => { k.synopsis = e.target.value; changed(); } })),
     autoGrow(h('textarea', { class: 'card-purpose', rows: 1, placeholder: 'Why it’s here…', value: k.purpose, oninput: (e) => { k.purpose = e.target.value; changed(); } })),
@@ -1297,6 +1881,11 @@ function boardCard(k, i) {
   );
   makeDraggable(card, 'node', k.id);
   makeDropTarget(card, k.id, { allowInside: false, horizontal: true });
+  card.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('input, textarea')) return;
+    e.preventDefault();
+    contextMenu({ x: e.clientX, y: e.clientY }, blockMenuItems([k.id]));
+  });
   // Only start dragging from the card chrome, not while selecting text in fields.
   card.addEventListener('mousedown', (e) => { card.draggable = !e.target.closest('input,textarea'); });
   return card;
@@ -1317,7 +1906,10 @@ function renderOutline() {
       h('div', { class: 'o-row o-head', role: 'row' },
         ['Title', 'What happens', 'Why it’s here', 'Status', 'Words'].map((t) => h('div', { role: 'columnheader' }, t))),
       rows.map(({ node: n, depth }) => {
-        const row = h('div', { class: `o-row type-${n.type} ${n.id === state.selectedId ? 'selected' : ''}`, role: 'row', 'data-id': n.id },
+        const row = h('div', {
+          class: `o-row type-${n.type} ${n.id === state.selectedId ? 'selected' : ''}`, role: 'row', 'data-id': n.id,
+          oncontextmenu: (e) => { if (e.target.closest('textarea')) return; e.preventDefault(); contextMenu({ x: e.clientX, y: e.clientY }, blockMenuItems([n.id])); },
+        },
           h('div', { class: 'o-title', style: `--depth:${depth}` },
             h('span', { class: `dot status-${n.status}` }),
             h('input', { value: n.title, 'aria-label': 'Title', onfocus: () => { state.selectedId = n.id; renderInspectorOnly(); }, oninput: (e) => { n.title = e.target.value; changed(); document.querySelector(`.row[data-id="${n.id}"] .row-title`)?.replaceChildren(n.title); } })),
@@ -2301,6 +2893,13 @@ function typeControls() {
         h('span', { class: 'range-val' }, leading.toFixed(2)))));
 }
 
+function toggleInspector() {
+  prefs.inspector = !prefs.inspector;
+  savePrefs();
+  render();
+  toast(prefs.inspector ? 'Side panel is back.' : `Side panel hidden. ${MOD}\\ or the panel button brings it back.`);
+}
+
 function toggleFocus() {
   state.focus = !state.focus;
   if (state.focus && state.view !== 'write') state.view = 'write';
@@ -2315,6 +2914,8 @@ document.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); state.handle ? save() : saveAs(); }
   if (mod && e.key === '.') { e.preventDefault(); toggleFocus(); }
+  if (mod && e.key === '\\') { e.preventDefault(); toggleInspector(); }
+  if (mod && e.key.toLowerCase() === 'e' && !document.querySelector('dialog[open]')) { e.preventDefault(); openExport(); }
   if (e.key === 'Escape' && state.focus) toggleFocus();
 });
 
