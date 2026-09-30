@@ -1707,6 +1707,24 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
+// ---- offline ---------------------------------------------------------------------------
+// sw.js caches the app so it opens with no connection. Once it's in place, fetch every
+// skin's fonts in the background too, so switching skins offline still looks right.
+
+const SKIN_FONTS = ['Inter', 'Literata', 'Geist', 'Courier Prime', 'Special Elite', 'IBM Plex Mono', 'EB Garamond', 'Cormorant Garamond', 'Fraunces', 'Lora', 'Nunito Sans'];
+function warmFonts() {
+  const faces = SKIN_FONTS.flatMap((f) => [`400 16px "${f}"`, `600 16px "${f}"`, `italic 400 16px "${f}"`]);
+  Promise.allSettled(faces.map((f) => document.fonts.load(f)));
+}
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').then(async (reg) => {
+    const first = !navigator.serviceWorker.controller;
+    await navigator.serviceWorker.ready;
+    (window.requestIdleCallback || setTimeout)(warmFonts);
+    if (first && reg.active) toast('Writers Blocks now works offline.');
+  }).catch(() => { /* offline support is a bonus; the app works without it */ });
+}
+
 applyTheme();
 S.recentHandle().then((hd) => { state.recent = hd; if (!state.project) render(); });
 render();

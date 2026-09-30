@@ -46,6 +46,12 @@ Tools for generating material, not just organizing it. They all live in the **Br
 
 The browser keeps only small conveniences: your skin and light/dark choice, text size, and on Chromium a *handle* pointing to your last file, so "Reopen" works. That handle holds no text, and the browser asks your permission before the app can read the file again. Use **File → Download a backup copy** now and then, or keep the project file in a synced or versioned folder.
 
+## Works offline
+
+After your first visit, Writers Blocks works with no internet connection. A service worker (`sw.js`) caches the app and every skin's fonts (never your writing, which stays in your file). Saving to your file is local, so autosave keeps working offline too. Only the optional AI assistant needs a connection.
+
+In Chrome or Edge you can also **install** it (the install icon in the address bar) so it opens in its own window like a desktop app.
+
 ## Optional AI assistant
 
 Off by default. Turn it on in **Settings** and add your own [Anthropic API key](https://console.anthropic.com/settings/keys). It works like a developmental editor: it asks questions and suggests directions, but doesn't write your prose.
@@ -87,6 +93,8 @@ js/app.js               UI: views, drag & drop, commands, settings
 js/model.js             the book data model (tree ops, word counts, export)
 js/storage.js           saving/opening files on your disk
 js/ai.js                optional assistant (prompts + Claude API calls)
+sw.js                   service worker: offline cache for the app and fonts
+manifest.webmanifest    makes the app installable
 examples/               a sample project to explore
 ```
 

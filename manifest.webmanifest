@@ -1,0 +1,13 @@
+{
+  "name": "Writers Blocks",
+  "short_name": "Writers Blocks",
+  "description": "Organize, restructure and draft long-form writing: books, stories, essays.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f0e6",
+  "theme_color": "#f5f0e6",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
