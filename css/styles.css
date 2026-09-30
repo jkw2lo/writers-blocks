@@ -101,7 +101,8 @@ textarea { resize: none; line-height: 1.45; }
 /* ---------- welcome ---------- */
 .welcome { min-height: 100%; display: grid; place-items: center; padding: 32px 16px;
   background: radial-gradient(1200px 600px at 50% -10%, var(--glow), transparent 60%), var(--texture), var(--bg); }
-.welcome-card { max-width: 540px; text-align: center; }
+.welcome-card { max-width: 760px; text-align: center; }
+.welcome-card .lede { max-width: 540px; margin-left: auto; margin-right: auto; }
 .welcome h1 { font: var(--display-w) 44px/1.1 var(--display); margin: 18px 0 12px; letter-spacing: -.01em; }
 .lede { font: 18px/1.55 var(--serif); color: var(--ink-2); margin: 0 0 28px; }
 .welcome-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
@@ -115,6 +116,27 @@ textarea { resize: none; line-height: 1.45; }
 .logo-blocks.small { width: 22px; gap: 2px; }
 .logo-blocks.small i { border-radius: 2px; }
 .logo-blocks.small i:nth-child(1) { width: calc(50% - 1px); }
+
+/* bookshelf of recent projects */
+.shelf { margin: 34px auto 0; max-width: min(760px, calc(100vw - 32px)); }
+.shelf-head { display: flex; justify-content: center; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.shelf-row { display: flex; gap: 18px; justify-content: safe center; align-items: flex-end; overflow-x: auto; padding: 12px 12px 0;
+  border-bottom: 9px solid color-mix(in srgb, var(--line-strong) 85%, var(--ink) 15%); box-shadow: 0 10px 12px -10px rgb(0 0 0 / .35); }
+.book { --cover-bg: color-mix(in oklab, var(--cover) 80%, #000); position: relative; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 118px; padding-bottom: 10px; }
+[data-mode="dark"] .book { --cover-bg: color-mix(in oklab, var(--cover) 55%, #000); }
+.book-cover { width: 118px; height: 158px; display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 14px 12px 12px 18px; border: 0; color: #fffaf2;
+  border-radius: 3px 8px 8px 3px; background: linear-gradient(90deg, rgb(0 0 0 / .28) 0 7px, rgb(255 255 255 / .12) 7px 8px, transparent 8px), var(--cover-bg);
+  box-shadow: 0 2px 3px rgb(0 0 0 / .2), 0 8px 18px -6px rgb(0 0 0 / .35); transition: transform .2s, box-shadow .2s; }
+.book-cover:hover, .book-cover:focus-visible { transform: translateY(-7px) rotate(-1.5deg); box-shadow: 0 4px 6px rgb(0 0 0 / .2), 0 16px 26px -8px rgb(0 0 0 / .4); }
+.book-title { font: var(--display-w) 15px/1.2 var(--display); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.book-words { margin-top: auto; font-size: 11px; opacity: .8; font-variant-numeric: tabular-nums; }
+.book-progress { height: 3px; border-radius: 2px; background: rgb(255 255 255 / .25); overflow: hidden; }
+.book-progress i { display: block; height: 100%; background: #fffaf2; }
+.book-when { font-size: 11px; color: var(--muted); }
+.book-remove { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); display: grid; place-items: center; padding: 0; opacity: 0; transition: opacity .15s; }
+.book-remove .icon { width: 12px; height: 12px; }
+.book:hover .book-remove, .book:focus-within .book-remove { opacity: 1; }
+@media (hover: none) { .book-remove { opacity: 1; } }
 
 /* ---------- shell ---------- */
 #app { height: 100%; display: flex; flex-direction: column; }

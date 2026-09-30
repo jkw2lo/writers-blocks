@@ -5,9 +5,10 @@
 // Elsewhere (Safari, Firefox) we fall back to open-from-disk and
 // download-to-save.
 //
-// The only thing kept in the browser is a *handle* to the last file you
-// opened (in IndexedDB) so "Reopen" works — it holds no text, and the browser
-// still asks your permission before the app can read the file again.
+// The browser keeps only a *shelf* of recent projects (in IndexedDB) so you can
+// reopen them: for each, a handle pointing to the file plus its title, word
+// count and when you last opened it. No text: the handle is just a pointer, and
+// the browser still asks your permission before the app can read the file again.
 
 export const canAutosave = 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
 
@@ -20,7 +21,9 @@ export const slug = (s) =>
 
 export const projectFileName = (title) => `${slug(title)}.wblocks.json`;
 
-// ---- tiny IndexedDB store for the recent file handle ------------------------
+// ---- the shelf: recent projects, in IndexedDB --------------------------------
+
+const SHELF_MAX = 12;
 
 function idb() {
   return new Promise((resolve, reject) => {
@@ -41,17 +44,48 @@ async function idbDo(mode, fn) {
   });
 }
 
-export async function rememberHandle(handle) {
-  try { await idbDo('readwrite', (s) => s.put(handle, 'recent')); } catch { /* optional */ }
+async function readShelf() {
+  let list = (await idbDo('readonly', (s) => s.get('shelf'))) || [];
+  // Earlier versions remembered just one file under 'recent'; move it onto the shelf.
+  const old = await idbDo('readonly', (s) => s.get('recent'));
+  if (old) {
+    if (!list.length) list = [{ id: newId(), handle: old, name: old.name, title: old.name.replace(/\.wblocks\.json$|\.json$/, ''), opened: Date.now() }];
+    await idbDo('readwrite', (s) => { s.put(list, 'shelf'); return s.delete('recent'); });
+  }
+  return list;
+}
+const writeShelf = (list) => idbDo('readwrite', (s) => s.put(list, 'shelf'));
+const newId = () => Math.random().toString(36).slice(2, 10);
+
+async function findEntry(list, handle) {
+  for (const e of list) {
+    try { if (await e.handle.isSameEntry(handle)) return e; } catch { /* stale handle */ }
+  }
+  return null;
 }
 
-export async function recentHandle() {
-  if (!canAutosave) return null;
-  try { return (await idbDo('readonly', (s) => s.get('recent'))) || null; } catch { return null; }
+// Recent projects, most recently opened first. Empty where handles aren't supported.
+export async function shelf() {
+  if (!canAutosave) return [];
+  try { return (await readShelf()).sort((a, b) => b.opened - a.opened); } catch { return []; }
 }
 
-export async function forgetRecent() {
-  try { await idbDo('readwrite', (s) => s.delete('recent')); } catch { /* optional */ }
+// Add a project to the shelf, or update it. meta: { title, words, target }; opened: bump to the front.
+export async function shelve(handle, meta = {}, { opened = false } = {}) {
+  if (!canAutosave || !handle) return;
+  try {
+    const list = await readShelf();
+    let e = await findEntry(list, handle);
+    if (!e) { e = { id: newId(), handle, opened: Date.now() }; list.push(e); }
+    Object.assign(e, meta, { handle, name: handle.name });
+    if (opened) e.opened = Date.now();
+    list.sort((a, b) => b.opened - a.opened);
+    await writeShelf(list.slice(0, SHELF_MAX));
+  } catch { /* the shelf is a convenience; never block saving on it */ }
+}
+
+export async function unshelve(id) {
+  try { await writeShelf((await readShelf()).filter((e) => e.id !== id)); } catch { /* optional */ }
 }
 
 // ---- file operations ----------------------------------------------------------

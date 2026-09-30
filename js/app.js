@@ -30,7 +30,7 @@ const state = {
   noteFilter: '',
   noteScope: 'all',
   canvasScroll: null,
-  recent: null,
+  shelf: [], // recent projects, for the welcome screen (Chromium only)
   session: null, // this sitting's progress: see startSession()
 };
 
@@ -178,6 +178,7 @@ async function save({ force = false } = {}) {
       return showConflict();
     }
     state.fileStamp = await S.writeHandle(state.handle, serialize());
+    S.shelve(state.handle, shelfMeta());
     state.dirty = false;
     state.saveError = null;
     state.conflict = false;
@@ -205,8 +206,8 @@ async function saveAs() {
     state.fileName = handle.name;
     state.fileStamp = null; // a file we just chose (and may be replacing) is ours to write
     state.conflict = false;
-    await S.rememberHandle(handle);
     await save();
+    await S.shelve(handle, shelfMeta(), { opened: true });
     toast(`Saving to ${handle.name}. Changes now save automatically.`);
   } catch (e) {
     if (e.name !== 'AbortError') toast(`Couldn't save: ${e.message}`, { error: true });
@@ -301,23 +302,31 @@ async function cmdOpen() {
   try {
     const { handle, name, text, stamp } = await S.pickOpen();
     loadProject(text, { handle, name, stamp });
-    if (handle) await S.rememberHandle(handle);
+    if (handle) await S.shelve(handle, shelfMeta(), { opened: true });
   } catch (e) {
     if (e.name !== 'AbortError') toast(e.message, { error: true });
   }
 }
 
-async function cmdReopen() {
+async function cmdReopen(entry) {
   try {
-    const { name, text, stamp } = await S.readHandle(state.recent);
-    loadProject(text, { handle: state.recent, name, stamp });
+    const { name, text, stamp } = await S.readHandle(entry.handle);
+    loadProject(text, { handle: entry.handle, name, stamp });
+    await S.shelve(entry.handle, shelfMeta(), { opened: true });
   } catch (e) {
-    toast(`Couldn't reopen: ${e.message}`, { error: true });
-    await S.forgetRecent();
-    state.recent = null;
-    render();
+    if (e.name === 'NotFoundError') {
+      // moved, renamed or deleted: it can't come back from here, so take it off the shelf
+      await S.unshelve(entry.id);
+      toast(`Couldn't find ${entry.name}. It may have been moved or renamed, so it’s off the shelf. Use Open to find it.`, { error: true });
+      refreshShelf();
+    } else {
+      toast(`Couldn't reopen ${entry.name}: ${e.message}`, { error: true });
+    }
   }
 }
+
+const shelfMeta = () => ({ title: P().nodes.root.title, words: M.treeWords(P()), target: P().targetWords || 0 });
+const refreshShelf = () => S.shelf().then((list) => { state.shelf = list; if (!state.project) render(); });
 
 async function cmdSample() {
   if (!confirmDiscard()) return;
@@ -537,6 +546,7 @@ function closeProject() {
   state.session = null;
   state.dirty = false;
   render();
+  refreshShelf();
 }
 
 // ---- help & tour -----------------------------------------------------------------------
@@ -872,11 +882,11 @@ function renderWelcome() {
         h('h1', null, 'Writers Blocks'),
         h('p', { class: 'lede' }, 'A place to shape a long piece of writing: map its structure, give every part a direction, and rearrange freely as the book finds its form.'),
         h('div', { class: 'welcome-actions' },
-          state.recent && h('button', { class: 'btn primary', onclick: cmdReopen }, `Reopen ${state.recent.name}`),
-          h('button', { class: `btn ${state.recent ? '' : 'primary'}`, onclick: cmdNew }, 'Start a new project'),
+          h('button', { class: 'btn primary', onclick: cmdNew }, 'Start a new project'),
           h('button', { class: 'btn', onclick: cmdOpen }, 'Open a project file…'),
           h('button', { class: 'btn ghost', onclick: cmdSample }, 'Explore a sample'),
         ),
+        bookshelf(),
         h('p', { class: 'welcome-help' }, 'New here? ',
           h('button', { class: 'link', onclick: () => openHelp({ section: 'quickstart' }) }, 'How to start a project'),
           ' · ',
@@ -886,11 +896,54 @@ function renderWelcome() {
           skinPicker({ compact: true })),
         h('p', { class: 'fine' },
           S.canAutosave
-            ? 'Your work is saved to a file on your computer that you choose, and it autosaves as you write. Nothing is kept in the browser.'
+            ? 'Your work is saved to a file on your computer that you choose, and it autosaves as you write. The shelf only remembers where your files are, never what’s in them.'
             : 'This browser can’t autosave to your disk, so use Save to download your project file, and Open it next time. (Chrome, Edge or Arc can autosave.) Nothing is kept in the browser.'),
       ),
     ),
   );
+}
+
+// ---- the shelf -----------------------------------------------------------------------
+
+const COVERS = ['--t-part', '--accent', '--s-outlined', '--s-revising', '--s-done', '--s-drafting'];
+const coverFor = (title) => COVERS[[...(title || '')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % COVERS.length];
+
+function ago(ts) {
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 2) return 'just now';
+  if (m < 60) return `${m} minutes ago`;
+  const hr = Math.round(m / 60);
+  if (hr < 24) return `${hr} hour${hr === 1 ? '' : 's'} ago`;
+  const d = Math.round(hr / 24);
+  if (d === 1) return 'yesterday';
+  if (d < 14) return `${d} days ago`;
+  if (d < 60) return `${Math.round(d / 7)} weeks ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function bookshelf() {
+  if (!state.shelf.length) return null;
+  return h('section', { class: 'shelf', 'aria-label': 'Recent projects' },
+    h('div', { class: 'shelf-head' },
+      h('span', { class: 'eyebrow' }, 'Your shelf'),
+      h('span', { class: 'muted small' }, 'Pick up where you left off')),
+    h('div', { class: 'shelf-row' },
+      state.shelf.map((e) => {
+        const pct = e.target ? Math.min(100, (e.words || 0) / e.target * 100) : 0;
+        return h('div', { class: 'book', style: `--cover: var(${coverFor(e.title || e.name)})` },
+          h('button', {
+            class: 'book-cover', onclick: () => cmdReopen(e),
+            title: `Open ${e.name}${e.words != null ? ` · ${fmt(e.words)} words` : ''}`,
+          },
+            h('span', { class: 'book-title' }, e.title || e.name),
+            e.words != null && h('span', { class: 'book-words' }, `${fmt(e.words)} words`),
+            e.target > 0 && h('span', { class: 'book-progress', 'aria-hidden': 'true' }, h('i', { style: `width:${pct}%` }))),
+          h('span', { class: 'book-when' }, ago(e.opened)),
+          h('button', {
+            class: 'book-remove', title: 'Take off the shelf (the file itself isn’t touched)', 'aria-label': `Remove ${e.title || e.name} from the shelf`,
+            onclick: async () => { await S.unshelve(e.id); refreshShelf(); },
+          }, icon('close')));
+      })));
 }
 
 function renderTopbar() {
@@ -2296,5 +2349,5 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 
 applyTheme();
-S.recentHandle().then((hd) => { state.recent = hd; if (!state.project) render(); });
+refreshShelf();
 render();
