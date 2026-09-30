@@ -4,6 +4,7 @@ import * as AI from './ai.js';
 import { dealPrompt } from './prompts.js';
 import * as Sound from './sound.js';
 import { confetti } from './celebrate.js';
+import { openHelp, startTour } from './help.js';
 
 // ---- state -------------------------------------------------------------------
 
@@ -37,7 +38,7 @@ const state = {
 const prefs = loadPrefs();
 function loadPrefs() {
   const d = { skin: 'studio', type: {}, typeCss: null, theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10,
-    sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
+    toured: false, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
   try { return { ...d, ...JSON.parse(localStorage.getItem('wb-prefs') || '{}') }; } catch { return d; }
 }
 function savePrefs() {
@@ -99,6 +100,7 @@ const ICONS = {
   sound: 'M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13',
   center: 'M4 12h16M8 6h8M8 18h8M2 9v6M22 9v6',
   fade: 'M4 6h10M4 12h16M4 18h8',
+  help: 'M12 21a9 9 0 100-18 9 9 0 000 18zM9.5 9.2a2.6 2.6 0 015 .6c0 1.7-2.5 2.1-2.5 3.7M12 17h.01',
 };
 function icon(name, cls = '') {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -230,6 +232,43 @@ function loadProject(text, { handle = null, name = null, stamp = null, keepPlace
   state.spark = null;
   if (!keepPlace) startSession();
   render();
+  if (!keepPlace) maybeTour();
+}
+
+// Title + starting shape. Resolves to { title, shape }, or null if cancelled.
+function newProjectDialog() {
+  return new Promise((resolve) => {
+    let shape = 'blank';
+    const dlg = h('dialog', { class: 'settings newproj' });
+    const title = h('input', { class: 'newproj-title', value: '', placeholder: 'Untitled Book', 'aria-label': 'Title' });
+    const finish = (ok) => { resolve(ok ? { title: title.value.trim() || 'Untitled Book', shape } : null); dlg.close(); };
+    const preview = (def) => def.tree.map(([, name]) => name).slice(0, 4).join(' · ');
+    const cards = Object.entries(M.SHAPES).map(([id, def]) => h('button', {
+      class: `shape-opt ${id === shape ? 'on' : ''}`, role: 'radio', 'aria-checked': String(id === shape), type: 'button',
+      onclick: (e) => {
+        shape = id;
+        dlg.querySelectorAll('.shape-opt').forEach((b) => { const on = b === e.currentTarget; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+      },
+      ondblclick: () => finish(true),
+    }, h('strong', null, def.label), h('span', { class: 'shape-blurb' }, def.blurb), h('span', { class: 'shape-preview' }, preview(def))));
+    dlg.append(
+      h('div', { class: 'dlg-head' }, h('h2', null, 'Start a new project'), h('button', { class: 'icon-btn', onclick: () => finish(false), title: 'Close' }, icon('close'))),
+      h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'What’s it called? (You can change this any time.)'), title),
+      h('div', { class: 'field-label newproj-label' }, 'Choose a starting shape'),
+      h('div', { class: 'shape-grid', role: 'radiogroup' }, cards),
+      h('p', { class: 'muted small' }, 'Every shape is just a scaffold: rename, move, split or delete anything. ',
+        h('button', { class: 'link', type: 'button', onclick: () => openHelp({ section: 'quickstart' }) }, 'How should I start?')),
+      h('div', { class: 'dlg-foot' },
+        h('button', { class: 'btn ghost', onclick: () => finish(false) }, 'Cancel'),
+        h('button', { class: 'btn primary', onclick: () => finish(true) }, 'Create project')),
+    );
+    title.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(true); });
+    dlg.addEventListener('cancel', () => resolve(null));
+    dlg.addEventListener('close', () => { dlg.remove(); resolve(null); });
+    document.body.append(dlg);
+    dlg.showModal();
+    title.focus();
+  });
 }
 
 function firstLeaf(p) {
@@ -239,9 +278,9 @@ function firstLeaf(p) {
 
 async function cmdNew() {
   if (!confirmDiscard()) return;
-  const title = prompt('What is your book (or project) called?', 'Untitled Book');
-  if (title === null) return;
-  state.project = M.newProject(title.trim() || 'Untitled Book');
+  const choice = await newProjectDialog();
+  if (!choice) return;
+  state.project = M.newProject(choice.title, choice.shape);
   state.handle = null;
   state.fileName = null;
   state.fileStamp = null;
@@ -254,6 +293,7 @@ async function cmdNew() {
   startSession();
   render();
   if (S.canAutosave) await saveAs();
+  maybeTour();
 }
 
 async function cmdOpen() {
@@ -498,6 +538,51 @@ function closeProject() {
   state.dirty = false;
   render();
 }
+
+// ---- help & tour -----------------------------------------------------------------------
+
+const showHelp = (section) => openHelp({ section, onTour: state.project ? runTour : null });
+
+const TOUR = [
+  { el: null, title: 'Welcome to Writers Blocks', text: 'Here’s a one-minute look around. Use the arrow keys or the buttons, and press Esc to skip. You can replay this from Help any time.' },
+  { el: '.binder .tree', title: 'The outline', text: 'Your book as a tree of parts, chapters and sections. Click a block to open it, drag to rearrange, or hover and click <b>+</b> to add inside. The dot shows its status.' },
+  { el: '.tabs', title: 'Four ways to look at it', text: '<b>Write</b> one block at a time. <b>Board</b> shows a chapter as index cards. <b>Outline</b> is the whole book as a table. <b>Notebook</b> holds loose ideas.' },
+  { el: '.direction', title: 'Every block has a direction', text: '<b>What happens</b> and <b>Why it’s here</b> keep you pointed somewhere. Below them are the blocks just before and after, so you know what you’re writing toward.' },
+  { el: '.toolbar', title: 'The writing toolbar', text: 'Formatting, and <b>Split here</b> to break a block in two. On the right are your writing aids: typing sounds, typewriter scrolling, and fade the rest.' },
+  { el: '.inspector', title: 'This block, and ideas', text: 'Set a block’s status and word target, add tags and notes, and move it around. Further down, <b>Brainstorm</b> deals prompts, runs freewriting sprints, and collides ideas.' },
+  { el: '#status', title: 'Progress and saving', text: 'The ring fills toward your book’s word target, and <b>+N this session</b> counts this sitting. Your file’s save status is here too.' },
+  { el: '.look', title: 'Make it yours', text: 'Skins for every mood, light or dark, and your own fonts and line spacing.' },
+  { el: '.help-btn', title: 'Help is always here', text: 'The quick start, a guide to every feature, and this tour. Press <b>?</b> any time you’re not typing.' },
+];
+
+function runTour() {
+  if (!state.project) return;
+  const before = { view: state.view, id: state.selectedId };
+  state.focus = false;
+  state.view = 'write';
+  if (sel().children.length || sel().id === 'root') state.selectedId = firstLeaf(P()) || state.selectedId;
+  render();
+  requestAnimationFrame(() => startTour(TOUR, {
+    onEnd: () => {
+      prefs.toured = true;
+      savePrefs();
+      if (P()?.nodes[before.id]) { state.view = before.view; state.selectedId = before.id; render(); }
+    },
+  }));
+}
+
+function maybeTour() {
+  if (prefs.toured || !state.project) return;
+  setTimeout(() => { if (!document.querySelector('dialog[open], .tour')) runTour(); }, 400);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '?' || e.metaKey || e.ctrlKey) return;
+  const t = e.target;
+  if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || document.querySelector('dialog[open], .tour')) return;
+  e.preventDefault();
+  showHelp();
+});
 
 // ---- writing aids: typing sounds, typewriter scrolling, fade the rest ------------------
 
@@ -792,6 +877,10 @@ function renderWelcome() {
           h('button', { class: 'btn', onclick: cmdOpen }, 'Open a project file…'),
           h('button', { class: 'btn ghost', onclick: cmdSample }, 'Explore a sample'),
         ),
+        h('p', { class: 'welcome-help' }, 'New here? ',
+          h('button', { class: 'link', onclick: () => openHelp({ section: 'quickstart' }) }, 'How to start a project'),
+          ' · ',
+          h('button', { class: 'link', onclick: () => openHelp({ section: 'basics' }) }, 'Guide to every feature')),
         h('div', { class: 'vibe' },
           h('span', { class: 'eyebrow' }, 'Pick a vibe'),
           skinPicker({ compact: true })),
@@ -822,6 +911,7 @@ function renderTopbar() {
     h('div', { class: 'spacer' }),
     h('div', { id: 'status', class: 'status' }),
     lookMenu(),
+    h('button', { class: 'icon-btn help-btn', title: 'Help & tour (?)', onclick: () => showHelp() }, icon('help')),
     h('button', { class: 'icon-btn', title: 'Focus mode (Ctrl/⌘ + .)', onclick: toggleFocus }, icon('focus')),
     h('button', { class: 'icon-btn', title: 'Settings', onclick: openSettings }, icon('gear')),
   );

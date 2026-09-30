@@ -6,7 +6,7 @@
 // Fonts: cache first, since they never change once published.
 // Anything else (the optional AI assistant) goes straight to the network.
 
-const VERSION = 'wb-v3';
+const VERSION = 'wb-v4';
 const APP = [
   './',
   'index.html',
@@ -21,6 +21,7 @@ const APP = [
   'js/prompts.js',
   'js/sound.js',
   'js/celebrate.js',
+  'js/help.js',
   'examples/sample.wblocks.json',
 ];
 const FONTS = 'wb-fonts'; // kept across app versions; fonts never change

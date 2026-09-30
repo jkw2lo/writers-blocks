@@ -4,6 +4,8 @@ A writing workspace for long-form work (novels, memoir, long stories, essay coll
 
 ## What it does
 
+New to it? The app has a **quick start** on how to approach a project, a searchable **help guide** to every feature, and a one-minute **guided tour** (offered the first time you open a project). They're all behind the **?** button in the top bar, or press `?`. **Start a new project** lets you begin from a blank page or a starting shape: a novel in three acts, memoir, essay collection, nonfiction argument, or short story.
+
 - **Blocks, not one long doc.** Your book is a tree: **Parts → Chapters → Sections**. Each block has its own draft text, plus:
   - **What happens**: a one- or two-line synopsis
   - **Why it's here**: what the block has to do for its chapter and the book
@@ -100,6 +102,9 @@ js/app.js               UI: views, drag & drop, commands, settings
 js/model.js             the book data model (tree ops, word counts, export)
 js/storage.js           saving/opening files on your disk
 js/ai.js                optional assistant (prompts + Claude API calls)
+js/help.js              quick start, help guide and guided tour
+js/sound.js             typing sounds (Web Audio, no files)
+js/celebrate.js         confetti
 sw.js                   service worker: offline cache for the app and fonts
 manifest.webmanifest    makes the app installable
 examples/               a sample project to explore

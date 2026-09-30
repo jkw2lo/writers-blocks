@@ -42,23 +42,115 @@ export function makeNode(type = 'section', title = '') {
   };
 }
 
-export function newProject(title = 'Untitled Book') {
+// Starting shapes for a new project. Each is a scaffold, not a rulebook: the
+// "why it's here" lines are prompts to overwrite, and everything can be renamed,
+// moved, split or deleted. Nodes are [type, title, purpose, children?].
+export const SHAPES = {
+  blank: {
+    label: 'A blank page', blurb: 'One part, one chapter, one section. Build the shape as you go.', target: 80000,
+    tree: [['part', 'Part One', '', [['chapter', 'Chapter 1', '', [['section', 'Opening', '']]]]]],
+  },
+  novel: {
+    label: 'Novel in three acts', blurb: 'Setup, confrontation, resolution, with the classic turning points as chapters.', target: 80000,
+    tree: [
+      ['part', 'Act One: Setup', 'Who is this about, what do they want, and what upends their world?', [
+        ['chapter', 'The ordinary world', 'Show the protagonist before everything changes. What’s missing for them?'],
+        ['chapter', 'The inciting incident', 'The event that starts the story. Why can’t they ignore it?'],
+        ['chapter', 'Crossing the threshold', 'The choice that commits them. There’s no going back.'],
+      ]],
+      ['part', 'Act Two: Confrontation', 'Rising stakes. What stands in the way, and how does the protagonist change?', [
+        ['chapter', 'New rules', 'The protagonist in unfamiliar territory: allies, enemies, tests.'],
+        ['chapter', 'The midpoint', 'A reversal or revelation that changes what the story is about.'],
+        ['chapter', 'Things fall apart', 'The plan fails. The lowest point.'],
+      ]],
+      ['part', 'Act Three: Resolution', 'The final confrontation, and who the protagonist is at the end.', [
+        ['chapter', 'The climax', 'Everything the story set up, paid off.'],
+        ['chapter', 'The new normal', 'What changed? Echo the opening to show it.'],
+      ]],
+    ],
+  },
+  memoir: {
+    label: 'Memoir', blurb: 'Before, the turn, after: a life organised around the change at its centre.', target: 70000,
+    tree: [
+      ['part', 'Before', 'The world and the self as they were. What did you believe then?', [
+        ['chapter', 'Where it starts', 'An opening scene that hints at what’s coming.'],
+        ['chapter', 'How things were', 'The people, place and habits the book will disturb.'],
+      ]],
+      ['part', 'The turn', 'The event or season everything pivots on.', [
+        ['chapter', 'What happened', 'Tell it in scene. Let the reader live it with you.'],
+        ['chapter', 'The aftermath', 'The immediate cost, and what you didn’t understand yet.'],
+      ]],
+      ['part', 'After', 'Who you became, and what you know now that you didn’t then.', [
+        ['chapter', 'Making sense of it', 'Reflection: the older narrator looking back.'],
+        ['chapter', 'Where it leaves us', 'An ending that answers the opening.'],
+      ]],
+    ],
+  },
+  essays: {
+    label: 'Essay collection', blurb: 'Stand-alone essays grouped into movements, each with its own argument.', target: 60000,
+    tree: [
+      ['part', 'I', 'What ties these essays together? Name the thread.', [
+        ['chapter', 'First essay', 'The essay that best introduces the collection’s question.'],
+        ['chapter', 'Second essay', 'What does this add, complicate or argue against?'],
+      ]],
+      ['part', 'II', 'How does the collection’s question deepen here?', [
+        ['chapter', 'Third essay', ''],
+        ['chapter', 'Fourth essay', ''],
+      ]],
+    ],
+  },
+  nonfiction: {
+    label: 'Nonfiction argument', blurb: 'A problem, the evidence, what to do about it. For ideas books and long-form journalism.', target: 70000,
+    tree: [
+      ['part', 'Introduction', 'The hook, the question, and the promise: what will the reader understand by the end?', [
+        ['chapter', 'Why this matters now', ''],
+      ]],
+      ['part', 'The problem', 'Make the reader feel the problem before you explain it.', [
+        ['chapter', 'A story that shows it', 'Open with a person or a scene, not a statistic.'],
+        ['chapter', 'How we got here', ''],
+      ]],
+      ['part', 'The evidence', 'Your argument, one claim per chapter.', [
+        ['chapter', 'First claim', ''],
+        ['chapter', 'Second claim', ''],
+        ['chapter', 'The strongest objection', 'Steelman the other side, then answer it.'],
+      ]],
+      ['part', 'What to do', 'What changes if the reader believes you?', [
+        ['chapter', 'Conclusion', 'Return to the opening story, changed by everything since.'],
+      ]],
+    ],
+  },
+  story: {
+    label: 'Short story', blurb: 'A handful of scenes in a single chapter, for pieces up to about 10,000 words.', target: 6000,
+    tree: [['chapter', 'The story', 'In one sentence: who wants what, and what gets in the way?', [
+      ['section', 'Opening scene', 'Start as late as you can. What’s the first sign of trouble?'],
+      ['section', 'Complication', 'Make it worse.'],
+      ['section', 'Crisis', 'The moment a choice has to be made.'],
+      ['section', 'Ending', 'What changed? Trust the reader.'],
+    ]]],
+  },
+};
+
+export function newProject(title = 'Untitled Book', shape = 'blank') {
   const root = makeNode('book', title);
   root.id = 'root';
-  const part = makeNode('part', 'Part One');
-  const chapter = makeNode('chapter', 'Chapter 1');
-  const section = makeNode('section', 'Opening');
-  chapter.children.push(section.id);
-  part.children.push(chapter.id);
-  root.children.push(part.id);
+  const nodes = { root };
+  const build = ([type, name, purpose, kids = []]) => {
+    const n = makeNode(type, name);
+    n.purpose = purpose;
+    nodes[n.id] = n;
+    n.children = kids.map(build);
+    return n.id;
+  };
+  const def = SHAPES[shape] || SHAPES.blank;
+  root.children = def.tree.map(build);
   return {
     format: FORMAT,
     version: FORMAT_VERSION,
     author: '',
-    targetWords: 80000,
+    targetWords: def.target,
     createdAt: now(),
     updatedAt: now(),
-    nodes: { root, [part.id]: part, [chapter.id]: chapter, [section.id]: section },
+    nodes,
     notebook: [],
     links: [],
   };
