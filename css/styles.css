@@ -105,7 +105,9 @@ textarea { resize: none; line-height: 1.45; }
 .welcome-card .lede { max-width: 540px; margin-left: auto; margin-right: auto; }
 .welcome h1 { font: var(--display-w) 44px/1.1 var(--display); margin: 18px 0 12px; letter-spacing: -.01em; }
 .lede { font: 18px/1.55 var(--serif); color: var(--ink-2); margin: 0 0 28px; }
-.welcome-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.welcome-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.welcome-actions .btn { justify-content: center; }
+@media (max-width: 420px) { .welcome-actions { grid-template-columns: 1fr; } }
 .welcome-actions .btn { padding: 11px 18px; font-size: 15px; }
 .fine { color: var(--muted); font-size: 13px; margin-top: 28px; line-height: 1.55; }
 .logo-blocks { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 5px; width: 64px; }
@@ -1001,7 +1003,9 @@ body.no-binder.no-inspector:not(.focus) .workspace { grid-template-columns: 34px
 .welcome h1 { margin: clamp(10px, 2vh, 18px) 0 clamp(8px, 1.4vh, 12px); font-size: clamp(34px, 5.4vh, 44px); }
 .welcome .lede { margin-bottom: clamp(16px, 2.6vh, 28px); font-size: clamp(16px, 2.1vh, 18px); }
 .welcome-help { margin-top: clamp(12px, 2vh, 18px); }
-.welcome .fine { margin-top: clamp(14px, 2.4vh, 28px); max-width: 520px; }
+.welcome-foot { border-top: 1px solid var(--line); padding-top: clamp(12px, 2vh, 20px); text-align: center; display: flex; flex-direction: column; align-items: center; }
+.welcome-foot .welcome-help { margin: 0; }
+.welcome .welcome-foot .fine { margin: 6px auto 0; max-width: 620px; }
 .welcome-side .shelf { margin-top: 0; width: 100%; }
 .welcome-side .vibe { margin-top: clamp(16px, 3vh, 32px); }
 .book-cover { width: 112px; height: clamp(126px, 17.5vh, 158px); }
@@ -1013,9 +1017,15 @@ body.no-binder.no-inspector:not(.focus) .workspace { grid-template-columns: 34px
   .welcome-intro { align-items: flex-start; text-align: left; }
   .welcome-intro .lede { margin-left: 0; }
   .welcome-intro .welcome-actions { justify-content: flex-start; }
+  .welcome-foot { grid-column: 1 / -1; }
   .welcome-side .shelf-head { justify-content: flex-start; }
   .welcome-side .vibe { align-items: flex-start; }
   .welcome-side .skin-picker.compact { justify-content: flex-start; }
   .welcome-side:not(:has(.shelf)) { align-self: center; }
-  .welcome .fine { text-align: left; }
 }
+
+/* daily backups (Settings) */
+.backup-settings p { margin: 0 0 8px; }
+.backup-list { list-style: none; margin: 0 0 8px; padding: 0; font-size: 12.5px; color: var(--ink-2); }
+.backup-list li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.backup-list .icon { width: 13px; height: 13px; color: var(--s-done); }

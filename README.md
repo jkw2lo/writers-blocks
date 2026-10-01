@@ -12,7 +12,7 @@ New to it? The app has a **quick start** on how to approach a project, a searcha
   - **What happens**: a one- or two-line synopsis
   - **Why it's here**: what the block has to do for its chapter and the book
   - status (idea → outlined → drafting → revising → done), word target, tags and margin notes
-- **Four views**
+- **Views**
   - **Write**: a distraction-light editor. Above it you see the block's direction, where it sits (breadcrumbs), and the blocks just before and after it, so you always know what you're writing *toward*.
   - **Board**: index cards for the pieces of a part or chapter. Drag to reorder, and edit synopses right on the card.
   - **Outline**: the whole book as a table. Read down "What happens" to check the story holds together; read down "Why it's here" to check every piece earns its place.
@@ -71,6 +71,8 @@ Tools for generating material, not just organizing it. They all live in the **Br
 
 The browser keeps only small conveniences: your skin, fonts and light/dark choice, text size, and on Chromium a **shelf** of recent projects on the welcome screen. For each, the shelf keeps a *handle* pointing to the file plus its title and word count, never its text, and the browser asks your permission before the app can read the file again. Use **File → Download a backup copy** now and then, or keep the project file in a synced or versioned folder.
 
+**Daily backups** (Chromium): choose a folder in *Settings → Daily backups*. On the first save of each new day you write, the project file as it stood at the end of your last writing day is copied there as `<title>-YYYY-MM-DD.wblocks.json`. Only the five most recent copies per project are kept, and days without edits make none. The app never pops a permission prompt mid-typing: if the browser has forgotten the folder's permission (a new browser session), the copy is held and an **Allow backup** button appears in the top bar. To restore a copy, open it like any project.
+
 ## Works offline
 
 After your first visit, Writers Blocks works with no internet connection. A service worker (`sw.js`) caches the app and every skin's fonts (never your writing, which stays in your file). Saving to your file is local, so autosave keeps working offline too. Only the optional AI assistant needs a connection.
@@ -117,25 +119,30 @@ Then open http://localhost:5173. (Opening `index.html` directly as a `file://` U
 index.html              app shell
 css/styles.css          all styles (design tokens for the default skin at the top)
 css/themes.css          the other skins: token overrides + signature touches
-js/app.js               UI: views, drag & drop, commands, settings
-js/model.js             the book data model (tree ops, word counts, export)
-js/storage.js           saving/opening files on your disk
-js/ai.js                optional assistant (prompts + Claude API calls)
-js/help.js              quick start, help guide and guided tour
-js/echoes.js            repetition checker (Echoes)
-js/import.js            importing .docx/.md/.txt/.html into blocks
-js/export.js            exports: manuscript, working draft, outline, snapshot → PDF/Word/Markdown/text/HTML
-js/sound.js             typing sounds (Web Audio, no files)
-js/celebrate.js         confetti
+js/app.js               entry: wires the modules together, global shortcuts, service worker
+js/core/                state and preferences, DOM helpers, undo
+js/project/             what you do to a project: files & saving, daily backups, two-device sync,
+                        commands (add, move, split, merge…), the stage flow, progress & milestones
+js/ui/                  the shell around the views: top bar, outline panel, inspector, menus,
+                        drag & drop, settings, skins, tools drawer, help & tour, export/import dialogs
+js/views/               one file per view: welcome, desk, write, board, outline, map, read,
+                        notebook, share, trash
+js/lib/                 framework-free logic: data model, file storage, AI, import, export,
+                        Echoes, prompts, sounds, confetti, help text
+tests/                  in-browser tests: serve the folder and open /tests/
 sw.js                   service worker: offline cache for the app and fonts
 manifest.webmanifest    makes the app installable
 examples/               a sample project to explore
 ```
 
+## Tests
+
+Serve the folder (see *Run locally*) and open http://localhost:5173/tests/. The tests cover the data model, import, export (every Word file is checked for valid XML), Echoes, the Map layout (no overlapping cards), and the Desk's suggestions. The page title shows the result, e.g. "✓ 44 passed".
+
 ## Ideas for later
 
 - Save as a folder of Markdown files (one per block) for easier diffing and editing elsewhere
-- Snapshots / revision history per block
+- Revision history per block
 - Character & place cards linked to blocks; tag filters on the board
 - Timeline view; per-day writing goals and streaks
 - Compile to .docx / EPUB

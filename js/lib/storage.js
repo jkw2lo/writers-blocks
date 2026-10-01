@@ -151,3 +151,60 @@ export function download(name, text, type = 'application/json') {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// ---- daily backups ----------------------------------------------------------------
+// A folder you choose once. Before the first save on a new day, the project file as it
+// stood at the end of your last writing day is copied there as
+// "<title>-YYYY-MM-DD.wblocks.json"; only the newest few per project are kept.
+
+export const canBackup = canAutosave && 'showDirectoryPicker' in window;
+
+export async function pickBackupDir(startIn) {
+  const dir = await window.showDirectoryPicker({ id: 'wb-backups', mode: 'readwrite', startIn: startIn || 'documents' });
+  try { await idbDo('readwrite', (s) => s.put(dir, 'backupDir')); } catch { /* still usable this session */ }
+  return dir;
+}
+
+export async function backupDir() {
+  if (!canBackup) return null;
+  try { return (await idbDo('readonly', (s) => s.get('backupDir'))) || null; } catch { return null; }
+}
+
+export async function forgetBackupDir() {
+  try { await idbDo('readwrite', (s) => s.delete('backupDir')); } catch { /* optional */ }
+}
+
+// ask: may show the browser's permission prompt (needs a click to have just happened).
+export async function dirPermission(dir, ask = false) {
+  const opts = { mode: 'readwrite' };
+  if ((await dir.queryPermission(opts)) === 'granted') return true;
+  return ask && (await dir.requestPermission(opts)) === 'granted';
+}
+
+export const backupName = (title, day) => `${slug(title)}-${day}.wblocks.json`;
+
+export async function writeBackup(dir, name, text) {
+  const fh = await dir.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(text);
+  await w.close();
+}
+
+// This project's backups, newest first: [{ name, day }]
+export async function listBackups(dir, title) {
+  const prefix = `${slug(title)}-`;
+  const out = [];
+  for await (const [name, handle] of dir.entries()) {
+    if (handle.kind !== 'file' || !name.startsWith(prefix)) continue;
+    const m = /^(\d{4}-\d{2}-\d{2})\.wblocks\.json$/.exec(name.slice(prefix.length));
+    if (m) out.push({ name, day: m[1] });
+  }
+  return out.sort((a, b) => b.day.localeCompare(a.day));
+}
+
+// Keep the newest `keep` backups of this project; remove older ones.
+export async function pruneBackups(dir, title, keep = 5) {
+  const list = await listBackups(dir, title);
+  for (const b of list.slice(keep)) await dir.removeEntry(b.name);
+  return list.slice(0, keep);
+}

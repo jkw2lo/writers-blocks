@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Writers Blocks tests</title>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 32px; color: #222; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 15px; margin: 22px 0 6px; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { padding: 2px 0; }
+    .ok { color: #2f7a43; }
+    .fail { color: #b3261e; font-weight: 600; }
+    pre { margin: 2px 0 6px 18px; white-space: pre-wrap; font-weight: 400; }
+  </style>
+</head>
+<body>
+  <p>Running…</p>
+  <script type="module">
+    import { run } from './harness.js';
+    import './model.test.js';
+    import './import.test.js';
+    import './export.test.js';
+    import './echoes.test.js';
+    import './app.test.js';
+    run(document.body);
+  </script>
+</body>
+</html>
