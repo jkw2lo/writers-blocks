@@ -928,14 +928,19 @@ function moveToNotebook(ids) {
     const top = p.nodes[id];
     let y = 60;
     const batch = [];
-    const add = (text, extra) => { batch.push(M.makeNote(text, { source: 'outline', x, y, ...extra })); y += extra.color === 'label' ? 70 : 150; made += 1; };
+    const keep = (n) => ({ title: n.title, type: n.type, synopsis: n.synopsis, purpose: n.purpose, notes: n.notes, content: n.content, status: n.status, targetWords: n.targetWords, tags: [...n.tags] });
+    const add = (text, extra, node) => {
+      batch.push(M.makeNote(text, { source: 'outline', x, y, ...extra, ...(node && { block: keep(node), blockText: text }) }));
+      y += extra.color === 'label' ? 70 : 150;
+      made += 1;
+    };
     const textOf = (n) => [n.title, n.synopsis, M.stripHtml(n.content).trim()].filter(Boolean).join('\n\n');
     if (top.children.length) {
-      add(top.title, { color: 'label' });
-      const inner = [{ node: top }, ...M.flatten(p, id)].filter(({ node }) => node.synopsis.trim() || node.content || !node.children.length);
-      for (const { node } of inner) add(node === top ? [top.synopsis, M.stripHtml(top.content).trim()].filter(Boolean).join('\n\n') || top.title : textOf(node), { color: node.children.length ? 'peach' : 'yellow' });
+      add(top.title, { color: 'label' }, top);
+      const inner = M.flatten(p, id).filter(({ node }) => node.synopsis.trim() || node.content || !node.children.length);
+      for (const { node } of inner) add(textOf(node), { color: node.children.length ? 'peach' : 'yellow' }, node);
     } else {
-      add(textOf(top), { color: 'yellow' });
+      add(textOf(top), { color: 'yellow' }, top);
     }
     // The grid lists newest first, so add them last-to-first: the label reads as the cluster's heading.
     p.notebook.push(...batch.reverse());
@@ -1008,15 +1013,41 @@ function splitAtCursor() {
   focusTitle();
 }
 
+// Turn a note's text into a block: a short title (never cut mid-word), and the words where
+// they'll show. An idea-sized note becomes the synopsis (visible on the Map, Board and
+// Outline); a long one (a freewrite, say) becomes the draft, with its opening as synopsis.
+function splitNote(text) {
+  const t = text.trim();
+  if (!t) return { title: 'From notebook', synopsis: '', content: '' };
+  const lines = t.split('\n');
+  const first = lines[0].trim();
+  const sentence = (/^.*?[.!?…](?=\s|$)/s.exec(t)?.[0] || first).trim();
+  const words = first.split(/\s+/);
+  let title;
+  let rest;
+  if (first.length <= 70) { title = first; rest = lines.slice(1).join('\n').trim(); }
+  else if (sentence.length <= 70) { title = sentence.replace(/[.]$/, ''); rest = t; }
+  else { title = `${words.slice(0, 8).join(' ')}…`; rest = t; }
+  if (t.length <= 320) return { title, synopsis: rest, content: '' };
+  const opening = (/^[\s\S]{0,240}[.!?](?=\s|$)/.exec(rest)?.[0] || rest.slice(0, 200).replace(/\s+\S*$/, '…')).trim();
+  return { title, synopsis: opening, content: textToHtml(rest) };
+}
+
 function placeNote(noteId, parentId, index = null) {
   const note = P().notebook.find((n) => n.id === noteId);
   if (!note) return;
   snapshot();
   const parent = P().nodes[parentId];
-  const firstLine = note.text.trim().split('\n')[0];
-  const title = firstLine.length > 60 ? `${firstLine.slice(0, 57).trim()}…` : firstLine || 'From notebook';
-  const n = M.addNode(P(), parentId, M.TYPES[parent.type].child, index, title);
-  n.content = textToHtml(note.text);
+  // A note that came from the outline (and wasn't edited since) comes back exactly as it was.
+  const saved = note.block && note.text === note.blockText ? note.block : null;
+  const parts = saved ? null : splitNote(note.text);
+  const n = M.addNode(P(), parentId, M.TYPES[parent.type].child, index, saved ? saved.title : parts.title);
+  if (saved) {
+    Object.assign(n, { synopsis: saved.synopsis || '', purpose: saved.purpose || '', notes: saved.notes || '', content: saved.content || '', status: saved.status || 'idea', targetWords: saved.targetWords || 0, tags: saved.tags || [] });
+  } else {
+    n.synopsis = parts.synopsis;
+    n.content = parts.content;
+  }
   M.removeNote(P(), noteId);
   changed();
   render();
@@ -3890,10 +3921,19 @@ function startMapRename(id, { fresh = false } = {}) {
   if (!card) return false;
   const n = P().nodes[id];
   const title = card.querySelector('.map-title');
-  const input = h('input', { class: 'map-rename', value: n.title, 'aria-label': `Name this ${M.TYPES[n.type].label.toLowerCase()}`, spellcheck: false });
+  // A wrapping box that grows as you type, so a long title is always fully visible.
+  const input = h('textarea', { class: 'map-rename', rows: 1, value: n.title, 'aria-label': `Name this ${M.TYPES[n.type].label.toLowerCase()}`, spellcheck: false });
   title.replaceWith(input);
   card.draggable = false;
   card.classList.add('renaming');
+  card.style.height = 'auto';
+  const grow = () => { input.style.height = 'auto'; input.style.height = `${input.scrollHeight}px`; };
+  input.addEventListener('input', () => {
+    if (/\n/.test(input.value)) input.value = input.value.replace(/\s*\n+\s*/g, ' '); // titles are one line (pasted text too)
+    grow();
+  });
+  requestAnimationFrame(grow);
+  grow();
   if (fresh) card.classList.add('just-added');
   input.focus({ preventScroll: true });
   input.select();

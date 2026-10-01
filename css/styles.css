@@ -876,7 +876,9 @@ body:has(.drawer).no-inspector .main, body.focus:has(.drawer) .main { padding-ri
 .map-rename-btn:hover { background: var(--surface-2); color: var(--accent); }
 .map-del-btn:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .map-title { cursor: text; }
-.map-rename { flex: 1; min-width: 0; padding: 2px 6px !important; font-size: 13px; border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft) !important; }
+.map-rename { flex: 1; min-width: 0; padding: 3px 6px !important; font: inherit; font-size: 13px; line-height: 1.35; resize: none; overflow: hidden; border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft) !important; }
+.map-card.type-book .map-rename, .map-card.type-part .map-rename { font: var(--display-w) 14.5px/1.3 var(--display); }
+.map-card.renaming { z-index: 6; box-shadow: var(--shadow-lg); }
 .map-card.just-added { animation: just-added 1.2s ease-out; }
 .map-fold.folded { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 
