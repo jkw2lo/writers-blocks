@@ -1232,30 +1232,33 @@ function render() {
 
 function renderWelcome() {
   document.body.classList.remove('focus');
+  // Two columns on wide screens (intro | shelf and vibe) so it all fits without scrolling.
   app.replaceChildren(
     h('div', { class: 'welcome' },
       h('div', { class: 'welcome-card' },
-        h('div', { class: 'logo-blocks', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
-        h('h1', null, 'Writers Blocks'),
-        h('p', { class: 'lede' }, 'A place to shape a long piece of writing: map its structure, give every part a direction, and rearrange freely as the book finds its form.'),
-        h('div', { class: 'welcome-actions' },
-          h('button', { class: 'btn primary', onclick: cmdNew }, 'Start a new project'),
-          h('button', { class: 'btn', onclick: cmdOpen }, 'Open a project file…'),
-          h('button', { class: 'btn', onclick: openImport }, 'Import a manuscript…'),
-          h('button', { class: 'btn ghost', onclick: cmdSample }, 'Explore a sample'),
-        ),
-        bookshelf(),
-        h('p', { class: 'welcome-help' }, 'New here? ',
-          h('button', { class: 'link', onclick: () => openHelp({ section: 'quickstart' }) }, 'How to start a project'),
-          ' · ',
-          h('button', { class: 'link', onclick: () => openHelp({ section: 'basics' }) }, 'Guide to every feature')),
-        h('div', { class: 'vibe' },
-          h('span', { class: 'eyebrow' }, 'Pick a vibe'),
-          skinPicker({ compact: true })),
-        h('p', { class: 'fine' },
-          S.canAutosave
-            ? 'Your work is saved to a file on your computer that you choose, and it autosaves as you write. The shelf only remembers where your files are, never what’s in them.'
-            : 'This browser can’t autosave to your disk, so use Save to download your project file, and Open it next time. (Chrome, Edge or Arc can autosave.) Nothing is kept in the browser.'),
+        h('div', { class: 'welcome-intro' },
+          h('div', { class: 'logo-blocks', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
+          h('h1', null, 'Writers Blocks'),
+          h('p', { class: 'lede' }, 'A place to shape a long piece of writing: map its structure, give every part a direction, and rearrange freely as the book finds its form.'),
+          h('div', { class: 'welcome-actions' },
+            h('button', { class: 'btn primary', onclick: cmdNew }, 'Start a new project'),
+            h('button', { class: 'btn', onclick: cmdOpen }, 'Open a project file…'),
+            h('button', { class: 'btn', onclick: openImport }, 'Import a manuscript…'),
+            h('button', { class: 'btn ghost', onclick: cmdSample }, 'Explore a sample'),
+          ),
+          h('p', { class: 'welcome-help' }, 'New here? ',
+            h('button', { class: 'link', onclick: () => openHelp({ section: 'quickstart' }) }, 'How to start a project'),
+            ' · ',
+            h('button', { class: 'link', onclick: () => openHelp({ section: 'basics' }) }, 'Guide to every feature')),
+          h('p', { class: 'fine' },
+            S.canAutosave
+              ? 'Your work is saved to a file on your computer that you choose, and it autosaves as you write. The shelf only remembers where your files are, never what’s in them.'
+              : 'This browser can’t autosave to your disk, so use Save to download your project file, and Open it next time. (Chrome, Edge or Arc can autosave.) Nothing is kept in the browser.')),
+        h('div', { class: 'welcome-side' },
+          bookshelf(),
+          h('div', { class: 'vibe' },
+            h('span', { class: 'eyebrow' }, 'Pick a vibe'),
+            skinPicker({ compact: true }))),
       ),
     ),
   );
@@ -1280,7 +1283,9 @@ function ago(ts) {
 }
 
 function bookshelf() {
-  if (!state.shelf.length) return null;
+  if (!state.shelf.length) {
+    return S.canAutosave ? h('div', { class: 'shelf-empty' }, h('b', null, 'Your shelf'), 'Projects you open or start will wait here, ready to pick up where you left off.') : null;
+  }
   return h('section', { class: 'shelf', 'aria-label': 'Recent projects' },
     h('div', { class: 'shelf-head' },
       h('span', { class: 'eyebrow' }, 'Your shelf'),
@@ -2860,6 +2865,7 @@ darkQuery.addEventListener('change', () => applyTheme(true));
 // A new skin brings new fonts: re-measure auto-growing textareas when they arrive.
 const refitTextareas = () => document.querySelectorAll('textarea[data-autogrow]').forEach((t) => t.fit?.());
 document.fonts?.addEventListener('loadingdone', refitTextareas);
+document.fonts?.addEventListener('loadingdone', () => { if (state.project && state.view === 'map' && !document.querySelector('.map-rename')) renderMapOnly(); });
 
 function setSkin(id) { prefs.skin = id; savePrefs(); applyTheme(true); }
 
@@ -3551,59 +3557,92 @@ async function finishImport(tree, o) {
 // move it, right-click for the block menu. Branches fold on the map only (the outline
 // keeps its own open/closed state).
 
-const MAP = { W: 214, H: 62, HD: 104, GAP_DEPTH: 64, GAP_SIBLING: 14 };
+const MAP = { W: 230, GAP_DEPTH: 64, GAP_SIBLING: 14 };
 
-function mapLayout(p) {
+// Cards grow to fit all their text, so the tree is laid out with each card's real height.
+// Siblings stack along one axis; a parent centres on its children, and if it's taller
+// than they are, they shift to make room so nothing overlaps.
+function mapLayout(p, heightOf) {
   const vertical = prefs.mapDir === 'down';
-  const H = prefs.mapDetails ? MAP.HD : MAP.H;
-  const step = vertical ? MAP.W + MAP.GAP_SIBLING : H + MAP.GAP_SIBLING;
-  const depthStep = vertical ? H + MAP.GAP_DEPTH : MAP.W + MAP.GAP_DEPTH;
+  const { W, GAP_SIBLING: G, GAP_DEPTH: D } = MAP;
   const items = [];
   const edges = [];
+  const ext = (it) => (vertical ? W : it.h);
   let cursor = 0;
   const place = (id, depth) => {
     const n = p.nodes[id];
     const kids = state.mapFolded.has(id) ? [] : n.children.filter((c) => p.nodes[c]);
-    const item = { id, depth };
+    const item = { id, depth, h: heightOf(id) };
+    const at = items.length;
     items.push(item);
-    if (kids.length) {
-      const placed = kids.map((c) => place(c, depth + 1));
-      item.cross = (placed[0].cross + placed[placed.length - 1].cross) / 2;
-      placed.forEach((k) => edges.push([item, k]));
-    } else {
+    if (!kids.length) {
       item.cross = cursor;
-      cursor += step;
+      cursor += ext(item) + G;
+      return item;
     }
+    const start = cursor;
+    const placed = kids.map((c) => place(c, depth + 1));
+    const first = placed[0];
+    const last = placed[placed.length - 1];
+    item.cross = ((first.cross + ext(first) / 2) + (last.cross + ext(last) / 2)) / 2 - ext(item) / 2;
+    if (item.cross < start) {
+      const shift = start - item.cross;
+      for (let i = at + 1; i < items.length; i++) items[i].cross += shift;
+      item.cross = start;
+      cursor += shift;
+    }
+    cursor = Math.max(cursor, item.cross + ext(item) + G);
+    placed.forEach((k) => edges.push([item, k]));
     return item;
   };
   place('root', 0);
-  for (const it of items) {
-    it.x = vertical ? it.cross : it.depth * depthStep;
-    it.y = vertical ? it.depth * depthStep : it.cross;
-  }
   const maxDepth = Math.max(...items.map((i) => i.depth));
-  const width = vertical ? Math.max(cursor - MAP.GAP_SIBLING, MAP.W) : maxDepth * depthStep + MAP.W;
-  const height = vertical ? maxDepth * depthStep + H : Math.max(cursor - MAP.GAP_SIBLING, H);
-  return { items, edges, width, height, H, vertical };
+  // Top-down: each row is as tall as its tallest card.
+  const rowH = Array.from({ length: maxDepth + 1 }, (_, d) => Math.max(...items.filter((i) => i.depth === d).map((i) => i.h)));
+  const rowY = rowH.map((_, d) => rowH.slice(0, d).reduce((sum, hh) => sum + hh + D, 0));
+  for (const it of items) {
+    it.x = vertical ? it.cross : it.depth * (W + D);
+    it.y = vertical ? rowY[it.depth] : it.cross;
+  }
+  const span = Math.max(cursor - G, vertical ? W : 0);
+  const width = vertical ? span : maxDepth * (W + D) + W;
+  const height = vertical ? rowY[maxDepth] + rowH[maxDepth] : span;
+  return { items, edges, width, height, vertical };
 }
 
 function mapEdgePath(a, b, L) {
-  const { H, vertical } = L;
-  if (vertical) {
-    const x1 = a.x + MAP.W / 2; const y1 = a.y + H;
+  if (L.vertical) {
+    const x1 = a.x + MAP.W / 2; const y1 = a.y + a.h;
     const x2 = b.x + MAP.W / 2; const y2 = b.y;
     const my = (y1 + y2) / 2;
     return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;
   }
-  const x1 = a.x + MAP.W; const y1 = a.y + H / 2;
-  const x2 = b.x; const y2 = b.y + H / 2;
+  const x1 = a.x + MAP.W; const y1 = a.y + a.h / 2;
+  const x2 = b.x; const y2 = b.y + b.h / 2;
   const mx = (x1 + x2) / 2;
   return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
 }
 
+// Build a card's content once, then measure its natural height off-screen.
+function measureMapCards(cards) {
+  const box = h('div', { class: `map-measure ${prefs.mapDir === 'down' ? 'down' : ''}`, 'aria-hidden': 'true' });
+  document.body.append(box);
+  const heights = {};
+  for (const [id, card] of cards) { card.style.width = `${MAP.W}px`; box.append(card); }
+  for (const [id, card] of cards) heights[id] = Math.ceil(card.offsetHeight);
+  box.remove();
+  return heights;
+}
+
 function renderMap() {
   const p = P();
-  const L = mapLayout(p);
+  const visible = [];
+  const walk = (id) => { visible.push(id); if (!state.mapFolded.has(id)) p.nodes[id].children.forEach((c) => p.nodes[c] && walk(c)); };
+  walk('root');
+  const built = new Map(visible.map((id) => [id, mapCard(id)]));
+  const heights = measureMapCards(built);
+  const L = mapLayout(p, (id) => heights[id]);
+  state.mapSize = { width: L.width, height: L.height };
   const z = prefs.mapZoom;
   const pad = 40;
   const svgNS = 'http://www.w3.org/2000/svg';
@@ -3618,66 +3657,74 @@ function renderMap() {
     svg.append(path);
   }
 
-  const descendants = (id) => M.flatten(p, id).length;
   const cards = L.items.map((it) => {
-    const n = p.nodes[it.id];
-    const isRoot = it.id === 'root';
-    const words = M.treeWords(p, it.id);
-    const target = isRoot ? p.targetWords : n.targetWords;
-    const folded = state.mapFolded.has(it.id);
-    const card = h('div', {
-      class: `map-card type-${isRoot ? 'book' : n.type} ${it.id === state.selectedId ? 'selected' : ''}`,
-      'data-id': it.id,
-      'data-x': it.x,
-      'data-y': it.y,
-      style: `left:${it.x}px;top:${it.y}px;width:${MAP.W}px;height:${L.H}px`,
-      title: n.synopsis || n.title,
-      tabindex: 0,
-      onclick: (e) => { if (!e.target.closest('button')) mapSelect(it.id); },
-      // Double-click the title to rename it here; anywhere else on the card opens it.
-      ondblclick: (e) => {
-        if (e.target.closest('button, input')) return;
-        if (e.target.closest('.map-title')) startMapRename(it.id);
-        else select(it.id, 'write');
-      },
-      onkeydown: (e) => {
-        if (e.target !== e.currentTarget) return;
-        if (e.key === 'Enter') select(it.id, 'write');
-        if (e.key === 'F2') { e.preventDefault(); startMapRename(it.id); }
-        if ((e.key === 'Delete' || e.key === 'Backspace') && !isRoot) { e.preventDefault(); mapDelete(it.id); }
-      },
-      oncontextmenu: (e) => { if (isRoot) return; e.preventDefault(); mapSelect(it.id); contextMenu({ x: e.clientX, y: e.clientY }, blockMenuItems([it.id])); },
-    },
-    h('div', { class: 'map-card-top' },
-      isRoot ? icon('book', 'map-book') : h('span', { class: `dot status-${n.status}`, title: n.status }),
-      h('span', { class: 'map-title', title: 'Double-click to rename' }, n.title),
-      h('button', { class: 'map-rename-btn', tabindex: -1, title: 'Rename (F2)', 'aria-label': `Rename ${n.title}`, onclick: (e) => { e.stopPropagation(); startMapRename(it.id); } }, icon('pen')),
-      !isRoot && h('button', { class: 'map-rename-btn map-del-btn', tabindex: -1, title: 'Move to the Trash (Delete)', 'aria-label': `Delete ${n.title}`, onclick: (e) => { e.stopPropagation(); mapDelete(it.id); } }, icon('close'))),
-    prefs.mapDetails && h('p', { class: 'map-syn' }, n.synopsis || h('span', { class: 'muted' }, 'No synopsis yet.')),
-    h('div', { class: 'map-meta' },
-      h('span', { class: 'map-wc' }, `${fmt(words)} w`),
-      target ? h('span', { class: 'map-bar', title: `${fmt(words)} of ${fmt(target)} words` }, h('i', { style: `width:${Math.min(100, (words / target) * 100)}%` })) : h('span', { class: 'spacer' }),
-      n.children.length > 0 && h('button', {
-        class: `map-fold ${folded ? 'folded' : ''}`,
-        title: folded ? `Show the ${descendants(it.id)} blocks inside` : 'Fold this branch (on the map only)',
-        onclick: (e) => { e.stopPropagation(); anchorMap(it.id); if (folded) state.mapFolded.delete(it.id); else state.mapFolded.add(it.id); render(); },
-      }, folded ? `+${descendants(it.id)}` : '−')));
-    // + on the outer edge adds inside; + in the gap after adds a sibling. Neither moves you.
-    const childType = M.TYPES[isRoot ? 'book' : n.type].child;
-    card.append(h('button', {
-      class: 'map-add map-add-child', tabindex: -1, title: `Add a ${childType} inside`,
-      onclick: (e) => { e.stopPropagation(); anchorMap(it.id); state.mapFolded.delete(it.id); addChild(it.id, childType); },
-    }, icon('plus')));
-    if (!isRoot) {
-      card.append(h('button', {
-        class: 'map-add map-add-after', tabindex: -1, title: `Add a ${n.type} after this`,
-        onclick: (e) => { e.stopPropagation(); anchorMap(it.id); addAfter(it.id); },
-      }, icon('plus')));
-      makeDraggable(card, 'node', it.id, () => carried(it.id));
-    }
+    const card = built.get(it.id);
+    Object.assign(card.dataset, { x: it.x, y: it.y, h: it.h });
+    card.style.cssText = `left:${it.x}px;top:${it.y}px;width:${MAP.W}px;height:${it.h}px`;
     return card;
   });
+  return mapShell(p, L, svg, cards, z, pad);
+}
 
+function mapCard(id) {
+  const p = P();
+  const it = { id };
+  const descendants = (nid) => M.flatten(p, nid).length;
+  const n = p.nodes[it.id];
+  const isRoot = it.id === 'root';
+  const words = M.treeWords(p, it.id);
+  const target = isRoot ? p.targetWords : n.targetWords;
+  const folded = state.mapFolded.has(it.id);
+  const card = h('div', {
+    class: `map-card type-${isRoot ? 'book' : n.type} ${it.id === state.selectedId ? 'selected' : ''}`,
+    'data-id': it.id,
+    tabindex: 0,
+    onclick: (e) => { if (!e.target.closest('button')) mapSelect(it.id); },
+    // Double-click the title to rename it here; anywhere else on the card opens it.
+    ondblclick: (e) => {
+      if (e.target.closest('button, input')) return;
+      if (e.target.closest('.map-title')) startMapRename(it.id);
+      else select(it.id, 'write');
+    },
+    onkeydown: (e) => {
+      if (e.target !== e.currentTarget) return;
+      if (e.key === 'Enter') select(it.id, 'write');
+      if (e.key === 'F2') { e.preventDefault(); startMapRename(it.id); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !isRoot) { e.preventDefault(); mapDelete(it.id); }
+    },
+    oncontextmenu: (e) => { if (isRoot) return; e.preventDefault(); mapSelect(it.id); contextMenu({ x: e.clientX, y: e.clientY }, blockMenuItems([it.id])); },
+  },
+  h('div', { class: 'map-card-top' },
+    isRoot ? icon('book', 'map-book') : h('span', { class: `dot status-${n.status}`, title: n.status }),
+    h('span', { class: 'map-title', title: 'Double-click to rename' }, n.title),
+    h('button', { class: 'map-rename-btn', tabindex: -1, title: 'Rename (F2)', 'aria-label': `Rename ${n.title}`, onclick: (e) => { e.stopPropagation(); startMapRename(it.id); } }, icon('pen')),
+    !isRoot && h('button', { class: 'map-rename-btn map-del-btn', tabindex: -1, title: 'Move to the Trash (Delete)', 'aria-label': `Delete ${n.title}`, onclick: (e) => { e.stopPropagation(); mapDelete(it.id); } }, icon('close'))),
+  prefs.mapDetails && h('p', { class: 'map-syn' }, n.synopsis || h('span', { class: 'muted' }, 'No synopsis yet.')),
+  h('div', { class: 'map-meta' },
+    h('span', { class: 'map-wc' }, `${fmt(words)} w`),
+    target ? h('span', { class: 'map-bar', title: `${fmt(words)} of ${fmt(target)} words` }, h('i', { style: `width:${Math.min(100, (words / target) * 100)}%` })) : h('span', { class: 'spacer' }),
+    n.children.length > 0 && h('button', {
+      class: `map-fold ${folded ? 'folded' : ''}`,
+      title: folded ? `Show the ${descendants(it.id)} blocks inside` : 'Fold this branch (on the map only)',
+      onclick: (e) => { e.stopPropagation(); anchorMap(it.id); if (folded) state.mapFolded.delete(it.id); else state.mapFolded.add(it.id); render(); },
+    }, folded ? `+${descendants(it.id)}` : '−')));
+  // + on the outer edge adds inside; + in the gap after adds a sibling. Neither moves you.
+  const childType = M.TYPES[isRoot ? 'book' : n.type].child;
+  card.append(h('button', {
+    class: 'map-add map-add-child', tabindex: -1, title: `Add a ${childType} inside`,
+    onclick: (e) => { e.stopPropagation(); anchorMap(it.id); state.mapFolded.delete(it.id); addChild(it.id, childType); },
+  }, icon('plus')));
+  if (!isRoot) {
+    card.append(h('button', {
+      class: 'map-add map-add-after', tabindex: -1, title: `Add a ${n.type} after this`,
+      onclick: (e) => { e.stopPropagation(); anchorMap(it.id); addAfter(it.id); },
+    }, icon('plus')));
+    makeDraggable(card, 'node', it.id, () => carried(it.id));
+  }
+  return card;
+}
+
+function mapShell(p, L, svg, cards, z, pad) {
   const canvas = h('div', { class: 'map-canvas', style: `width:${L.width}px;height:${L.height}px;transform:scale(${z});left:${pad}px;top:${pad}px` }, svg, cards);
   canvas.addEventListener('dragover', (e) => {
     if (!state.drag) return;
@@ -3805,9 +3852,9 @@ function showMapDrop(canvas, hit, L) {
     hit.card.classList.add('drop-inside');
     style = `left:${x + MAP.W}px;top:${y}px`;
   } else if (L.vertical) {
-    style = `left:${hit.zone === 'before' ? x - gap : x + MAP.W + gap}px;top:${y}px;height:${L.H}px`;
+    style = `left:${hit.zone === 'before' ? x - gap : x + MAP.W + gap}px;top:${y}px;height:${+hit.card.dataset.h}px`;
   } else {
-    style = `left:${x}px;top:${hit.zone === 'before' ? y - gap : y + L.H + gap}px;width:${MAP.W}px`;
+    style = `left:${x}px;top:${hit.zone === 'before' ? y - gap : y + +hit.card.dataset.h + gap}px;width:${MAP.W}px`;
   }
   mark.style.cssText = style;
   const parent = inside ? null : M.parentOf(p, hit.targetId);
@@ -3906,7 +3953,7 @@ function setMapZoom(z) {
 function fitMap() {
   const wrap = document.querySelector('.map-wrap');
   if (!wrap) return;
-  const L = mapLayout(P());
+  const L = state.mapSize || { width: 1000, height: 600 };
   const z = Math.min(1.2, (wrap.clientWidth - 80) / L.width, (wrap.clientHeight - 80) / L.height);
   state.mapScroll = { left: 0, top: 0 };
   setMapZoom(Math.max(0.2, z));
