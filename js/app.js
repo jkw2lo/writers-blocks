@@ -1213,7 +1213,7 @@ function bookshelf() {
             class: 'book-cover', onclick: () => cmdReopen(e),
             title: `Open ${e.name}${e.words != null ? ` · ${fmt(e.words)} words` : ''}`,
           },
-            h('span', { class: 'book-title' }, e.title || e.name),
+            h('span', { class: 'cover-title' }, e.title || e.name),
             e.words != null && h('span', { class: 'book-words' }, `${fmt(e.words)} words`),
             e.target > 0 && h('span', { class: 'book-progress', 'aria-hidden': 'true' }, h('i', { style: `width:${pct}%` }))),
           h('span', { class: 'book-when' }, ago(e.opened)),

@@ -128,7 +128,7 @@ textarea { resize: none; line-height: 1.45; }
   border-radius: 3px 8px 8px 3px; background: linear-gradient(90deg, rgb(0 0 0 / .28) 0 7px, rgb(255 255 255 / .12) 7px 8px, transparent 8px), var(--cover-bg);
   box-shadow: 0 2px 3px rgb(0 0 0 / .2), 0 8px 18px -6px rgb(0 0 0 / .35); transition: transform .2s, box-shadow .2s; }
 .book-cover:hover, .book-cover:focus-visible { transform: translateY(-7px) rotate(-1.5deg); box-shadow: 0 4px 6px rgb(0 0 0 / .2), 0 16px 26px -8px rgb(0 0 0 / .4); }
-.book-title { font: var(--display-w) 15px/1.2 var(--display); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.cover-title { font: var(--display-w) 15px/1.2 var(--display); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .book-words { margin-top: auto; font-size: 11px; opacity: .8; font-variant-numeric: tabular-nums; }
 .book-progress { height: 3px; border-radius: 2px; background: rgb(255 255 255 / .25); overflow: hidden; }
 .book-progress i { display: block; height: 100%; background: #fffaf2; }
