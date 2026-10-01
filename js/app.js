@@ -40,6 +40,8 @@ const state = {
   readScope: 'root', // what the Read view shows
   mapFolded: new Set(), // branches folded on the Map (independent of the outline)
   mapScroll: null,
+  mapAnchor: null, // { id, dx, dy }: keep this card here on screen across a re-layout
+  mapFocus: null, // a card to bring into view after the next render
   mapFitted: false,
   multi: new Set(), // blocks selected together in the outline (⌘/Ctrl- or Shift-click)
   anchor: null, // where a Shift-click range starts
@@ -848,8 +850,13 @@ function addAfter(id) {
 
 function afterAdd(n) {
   if (state.view === 'map') {
-    const wrap = document.querySelector('.map-wrap');
-    if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+    // Keep the card you clicked + on still (the + buttons set it); otherwise its neighbour.
+    if (!state.mapAnchor) {
+      const parent = M.parentOf(P(), n.id);
+      const i = parent.children.indexOf(n.id);
+      anchorMap(parent.children[i - 1] || parent.id);
+    }
+    state.mapFocus = n.id;
   }
   render();
   if (state.view === 'map' && startMapRename(n.id, { fresh: true })) return;
@@ -1220,6 +1227,7 @@ function render() {
   state.lastRenderKey = `${state.view}:${state.selectedId}`;
   renderStatus();
   paintDrawer();
+  if (state.view === 'map') mapAfterMount();
 }
 
 function renderWelcome() {
@@ -3652,18 +3660,18 @@ function renderMap() {
       n.children.length > 0 && h('button', {
         class: `map-fold ${folded ? 'folded' : ''}`,
         title: folded ? `Show the ${descendants(it.id)} blocks inside` : 'Fold this branch (on the map only)',
-        onclick: (e) => { e.stopPropagation(); if (folded) state.mapFolded.delete(it.id); else state.mapFolded.add(it.id); render(); },
+        onclick: (e) => { e.stopPropagation(); anchorMap(it.id); if (folded) state.mapFolded.delete(it.id); else state.mapFolded.add(it.id); render(); },
       }, folded ? `+${descendants(it.id)}` : '−')));
     // + on the outer edge adds inside; + in the gap after adds a sibling. Neither moves you.
     const childType = M.TYPES[isRoot ? 'book' : n.type].child;
     card.append(h('button', {
       class: 'map-add map-add-child', tabindex: -1, title: `Add a ${childType} inside`,
-      onclick: (e) => { e.stopPropagation(); state.mapFolded.delete(it.id); addChild(it.id, childType); },
+      onclick: (e) => { e.stopPropagation(); anchorMap(it.id); state.mapFolded.delete(it.id); addChild(it.id, childType); },
     }, icon('plus')));
     if (!isRoot) {
       card.append(h('button', {
         class: 'map-add map-add-after', tabindex: -1, title: `Add a ${n.type} after this`,
-        onclick: (e) => { e.stopPropagation(); addAfter(it.id); },
+        onclick: (e) => { e.stopPropagation(); anchorMap(it.id); addAfter(it.id); },
       }, icon('plus')));
       makeDraggable(card, 'node', it.id, () => carried(it.id));
     }
@@ -3711,10 +3719,6 @@ function renderMap() {
     setMapZoom(prefs.mapZoom * (e.deltaY < 0 ? 1.1 : 0.9));
   }, { passive: false });
   wrap.addEventListener('scroll', () => { state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop }; });
-  requestAnimationFrame(() => {
-    if (state.mapScroll) { wrap.scrollLeft = state.mapScroll.left; wrap.scrollTop = state.mapScroll.top; }
-    else if (!state.mapFitted) { state.mapFitted = true; fitMap(); }
-  });
 
   const seg = (key, choices) => h('div', { class: 'seg-control' }, choices.map(([v, l]) => h('button', {
     class: prefs[key] === v ? 'active' : '', onclick: () => { prefs[key] = v; savePrefs(); state.mapScroll = null; render(); },
@@ -3741,6 +3745,36 @@ function renderMap() {
 
 // Where would a drop land? Along the sibling axis: the first third of a card is "before",
 // the last third "after", the middle "into". Nothing can go inside itself.
+// Runs right after the map is put on the page (no waiting a frame, so it never flashes
+// in the wrong place): restore the scroll, keep the anchored card where it was on screen,
+// and bring a new card into view, gently and only as far as needed.
+function mapAfterMount() {
+  const wrap = document.querySelector('.map-wrap');
+  if (!wrap) return;
+  if (!state.mapScroll && !state.mapFitted) { state.mapFitted = true; fitMap(); return; }
+  if (state.mapScroll) { wrap.scrollLeft = state.mapScroll.left; wrap.scrollTop = state.mapScroll.top; }
+  const wr = wrap.getBoundingClientRect();
+  const a = state.mapAnchor;
+  state.mapAnchor = null;
+  const ac = a && wrap.querySelector(`.map-card[data-id="${a.id}"]`);
+  if (ac) {
+    const cr = ac.getBoundingClientRect();
+    wrap.scrollLeft += cr.left - wr.left - a.dx;
+    wrap.scrollTop += cr.top - wr.top - a.dy;
+  }
+  const f = state.mapFocus;
+  state.mapFocus = null;
+  const fc = f && wrap.querySelector(`.map-card[data-id="${f}"]`);
+  if (fc) {
+    const cr = fc.getBoundingClientRect();
+    const m = 48;
+    const dx = cr.left < wr.left + m ? cr.left - wr.left - m : cr.right > wr.right - m ? cr.right - wr.right + m : 0;
+    const dy = cr.top < wr.top + m ? cr.top - wr.top - m : cr.bottom > wr.bottom - m ? cr.bottom - wr.bottom + m : 0;
+    if (dx || dy) wrap.scrollBy({ left: dx, top: dy, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
+  state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+}
+
 function mapHit(e, L) {
   const d = state.drag;
   const card = e.target.closest?.('.map-card');
@@ -3797,6 +3831,7 @@ function renderMapOnly() {
   const wrap = document.querySelector('.map-wrap');
   if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
   document.querySelector('.main.view-map')?.replaceChildren(renderMap());
+  mapAfterMount();
 }
 
 // Name (or rename) a block right on its card.
@@ -3811,8 +3846,7 @@ function startMapRename(id, { fresh = false } = {}) {
   card.draggable = false;
   card.classList.add('renaming');
   if (fresh) card.classList.add('just-added');
-  card.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  input.focus();
+  input.focus({ preventScroll: true });
   input.select();
   let done = false;
   const finish = (commit) => {
@@ -3820,8 +3854,7 @@ function startMapRename(id, { fresh = false } = {}) {
     done = true;
     const v = input.value.trim();
     if (commit && v && v !== n.title) { n.title = v; changed(); }
-    const wrap = document.querySelector('.map-wrap');
-    if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+    anchorMap(id);
     render();
   };
   input.addEventListener('keydown', (e) => {
@@ -3834,10 +3867,23 @@ function startMapRename(id, { fresh = false } = {}) {
   return true;
 }
 
+// Remember where a card sits on screen, so the next re-layout can keep it there.
+function anchorMap(id) {
+  const wrap = document.querySelector('.map-wrap');
+  const card = id && wrap?.querySelector(`.map-card[data-id="${id}"]`);
+  if (!wrap) return;
+  state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+  if (!card) return;
+  const cr = card.getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
+  state.mapAnchor = { id, dx: cr.left - wr.left, dy: cr.top - wr.top };
+}
+
 // Delete from the map without losing your place on it (it goes to the Trash; Undo works).
 function mapDelete(id) {
-  const wrap = document.querySelector('.map-wrap');
-  if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+  const parent = M.parentOf(P(), id);
+  const i = parent.children.indexOf(id);
+  anchorMap(parent.children[i - 1] || parent.id);
   removeNode(id);
 }
 
