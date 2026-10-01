@@ -839,7 +839,12 @@ function addAfter(id) {
 }
 
 function afterAdd(n) {
+  if (state.view === 'map') {
+    const wrap = document.querySelector('.map-wrap');
+    if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+  }
   render();
+  if (state.view === 'map' && startMapRename(n.id)) return;
   const card = state.view === 'board' && document.querySelector(`.card[data-id="${n.id}"] .card-title`);
   if (card) { card.focus(); card.select(); return; }
   if (!startRename(n.id, { fresh: true })) toast(`Added “${n.title}” to “${M.parentOf(P(), n.id).title}”.`, { undo: true });
@@ -1242,7 +1247,12 @@ function bookshelf() {
 
 function renderTopbar() {
   const root = P().nodes.root;
-  const views = [['write', 'Write'], ['board', 'Board'], ['outline', 'Outline'], ['map', 'Map'], ['read', 'Read'], ['notebook', `Notebook${P().notebook.length ? ` · ${P().notebook.length}` : ''}`]];
+  // Tabs grouped by stage of work: drafting, shaping the structure, then reading and sharing.
+  const groups = [
+    { label: 'Draft', hint: 'Write, and keep loose ideas', views: [['write', 'Write'], ['notebook', `Notebook${P().notebook.length ? ` · ${P().notebook.length}` : ''}`]] },
+    { label: 'Shape', hint: 'See and rearrange the structure', views: [['outline', 'Outline'], ['map', 'Map'], ['board', 'Board']] },
+    { label: 'Share', hint: 'Read it through, export, print', views: [['read', 'Read']], extra: h('button', { class: 'tab tab-action', title: `Export, print or share (${MOD}E)`, onclick: () => openExport() }, icon('share'), 'Export') },
+  ];
   return h('header', { class: 'topbar' },
     h('div', { class: 'brand', title: 'Writers Blocks' }, h('div', { class: 'logo-blocks small', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))),
     fileMenu(),
@@ -1250,21 +1260,26 @@ function renderTopbar() {
       class: 'book-title', value: root.title, 'aria-label': 'Book title',
       oninput: (e) => { root.title = e.target.value; changed(); document.querySelectorAll('[data-root-title]').forEach((x) => (x.textContent = root.title)); },
     }),
-    h('nav', { class: 'tabs', role: 'tablist' },
-      views.map(([id, label]) => h('button', {
-        role: 'tab', class: `tab ${state.view === id ? 'active' : ''}`, 'aria-selected': String(state.view === id),
-        onclick: () => { state.view = id; render(); },
-      }, label))),
+    h('nav', { class: 'tabs', 'aria-label': 'Views' },
+      groups.map((g) => h('div', { class: 'tab-group', role: 'group', 'aria-label': g.label, title: g.hint },
+        h('span', { class: 'tab-group-label', 'aria-hidden': 'true' }, g.label),
+        g.views.map(([id, label]) => h('button', {
+          class: `tab ${state.view === id ? 'active' : ''}`, 'aria-current': state.view === id ? 'page' : null,
+          onclick: () => { state.view = id; render(); },
+        }, label)),
+        g.extra))),
     h('div', { class: 'spacer' }),
     h('div', { id: 'status', class: 'status' }),
-    lookMenu(),
-    h('button', {
-      class: `icon-btn panel-btn ${prefs.inspector ? 'on' : ''}`, 'aria-pressed': String(prefs.inspector),
-      title: `${prefs.inspector ? 'Hide' : 'Show'} the side panel (${MOD}\\)`, onclick: toggleInspector,
-    }, icon('panel')),
-    h('button', { class: 'icon-btn help-btn', title: 'Help & tour (?)', onclick: () => showHelp() }, icon('help')),
-    h('button', { class: 'icon-btn', title: 'Focus mode (Ctrl/⌘ + .)', onclick: toggleFocus }, icon('focus')),
-    h('button', { class: 'icon-btn', title: 'Settings', onclick: openSettings }, icon('gear')),
+    h('div', { class: 'bar-cluster', role: 'group', 'aria-label': 'Layout' },
+      h('button', {
+        class: `icon-btn panel-btn ${prefs.inspector ? 'on' : ''}`, 'aria-pressed': String(prefs.inspector),
+        title: `${prefs.inspector ? 'Hide' : 'Show'} the side panel (${MOD}\\)`, onclick: toggleInspector,
+      }, icon('panel')),
+      h('button', { class: 'icon-btn', title: `Focus mode (${MOD}.)`, onclick: toggleFocus }, icon('focus'))),
+    h('div', { class: 'bar-cluster', role: 'group', 'aria-label': 'App' },
+      lookMenu(),
+      h('button', { class: 'icon-btn help-btn', title: 'Help & tour (?)', onclick: () => showHelp() }, icon('help')),
+      h('button', { class: 'icon-btn', title: 'Settings', onclick: openSettings }, icon('gear'))),
   );
 }
 
@@ -3532,6 +3547,8 @@ function renderMap() {
     const card = h('div', {
       class: `map-card type-${isRoot ? 'book' : n.type} ${it.id === state.selectedId ? 'selected' : ''}`,
       'data-id': it.id,
+      'data-x': it.x,
+      'data-y': it.y,
       style: `left:${it.x}px;top:${it.y}px;width:${MAP.W}px;height:${L.H}px`,
       title: n.synopsis || n.title,
       tabindex: 0,
@@ -3552,12 +3569,44 @@ function renderMap() {
         title: folded ? `Show the ${descendants(it.id)} blocks inside` : 'Fold this branch (on the map only)',
         onclick: (e) => { e.stopPropagation(); if (folded) state.mapFolded.delete(it.id); else state.mapFolded.add(it.id); render(); },
       }, folded ? `+${descendants(it.id)}` : '−')));
-    if (!isRoot) makeDraggable(card, 'node', it.id, () => carried(it.id));
-    makeDropTarget(card, it.id, { horizontal: L.vertical });
+    // + on the outer edge adds inside; + in the gap after adds a sibling. Neither moves you.
+    const childType = M.TYPES[isRoot ? 'book' : n.type].child;
+    card.append(h('button', {
+      class: 'map-add map-add-child', tabindex: -1, title: `Add a ${childType} inside`,
+      onclick: (e) => { e.stopPropagation(); state.mapFolded.delete(it.id); addChild(it.id, childType); },
+    }, icon('plus')));
+    if (!isRoot) {
+      card.append(h('button', {
+        class: 'map-add map-add-after', tabindex: -1, title: `Add a ${n.type} after this`,
+        onclick: (e) => { e.stopPropagation(); addAfter(it.id); },
+      }, icon('plus')));
+      makeDraggable(card, 'node', it.id, () => carried(it.id));
+    }
     return card;
   });
 
   const canvas = h('div', { class: 'map-canvas', style: `width:${L.width}px;height:${L.height}px;transform:scale(${z});left:${pad}px;top:${pad}px` }, svg, cards);
+  canvas.addEventListener('dragover', (e) => {
+    if (!state.drag) return;
+    e.preventDefault();
+    const w = canvas.closest('.map-wrap');
+    const r = w?.getBoundingClientRect();
+    if (r) {
+      if (e.clientY < r.top + 40) w.scrollTop -= 12; else if (e.clientY > r.bottom - 40) w.scrollTop += 12;
+      if (e.clientX < r.left + 40) w.scrollLeft -= 12; else if (e.clientX > r.right - 40) w.scrollLeft += 12;
+    }
+    const hit = mapHit(e, L);
+    e.dataTransfer.dropEffect = hit ? 'move' : 'none';
+    showMapDrop(canvas, hit, L);
+    mapHoverUnfold(hit);
+  });
+  canvas.addEventListener('dragleave', (e) => { if (!canvas.contains(e.relatedTarget)) showMapDrop(canvas, null, L); });
+  canvas.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const hit = mapHit(e, L);
+    if (hit) performDrop(hit.targetId, hit.zone);
+    else endDrag();
+  });
   const sizer = h('div', { class: 'map-sizer', style: `width:${L.width * z + pad * 2}px;height:${L.height * z + pad * 2}px` }, canvas);
   const wrap = h('div', { class: `map-wrap ${L.vertical ? 'down' : ''}` }, sizer);
 
@@ -3603,6 +3652,100 @@ function renderMap() {
           h('button', { class: 'icon-btn small', title: 'Zoom in', onclick: () => setMapZoom(prefs.mapZoom * 1.2) }, '+')),
         h('button', { class: 'btn small', title: 'Fit the whole map on screen', onclick: fitMap }, icon('focus'), 'Fit'))),
     wrap);
+}
+
+// Where would a drop land? Along the sibling axis: the first third of a card is "before",
+// the last third "after", the middle "into". Nothing can go inside itself.
+function mapHit(e, L) {
+  const d = state.drag;
+  const card = e.target.closest?.('.map-card');
+  if (!d || !card) return null;
+  const p = P();
+  const id = card.dataset.id;
+  const ids = d.kind === 'node' ? d.ids : [];
+  if (ids.some((x) => x === id || M.isDescendant(p, id, x))) return null;
+  if (id === 'root') return { targetId: 'root', zone: 'inside', card };
+  const r = card.getBoundingClientRect();
+  const f = L.vertical ? (e.clientX - r.left) / r.width : (e.clientY - r.top) / r.height;
+  return { targetId: id, zone: f < 0.3 ? 'before' : f > 0.7 ? 'after' : 'inside', card };
+}
+
+function showMapDrop(canvas, hit, L) {
+  canvas.querySelectorAll('.map-card.drop-inside').forEach((c) => c.classList.remove('drop-inside'));
+  let mark = canvas.querySelector('.map-drop');
+  if (!hit) { mark?.remove(); return; }
+  if (!mark) { mark = h('div', { class: 'map-drop', 'aria-hidden': 'true' }, h('span', { class: 'drop-label' })); canvas.append(mark); }
+  const p = P();
+  const x = +hit.card.dataset.x;
+  const y = +hit.card.dataset.y;
+  const gap = MAP.GAP_SIBLING / 2;
+  const inside = hit.zone === 'inside';
+  mark.className = `map-drop ${inside ? 'is-inside' : L.vertical ? 'is-col' : 'is-row'}`;
+  let style;
+  if (inside) {
+    hit.card.classList.add('drop-inside');
+    style = `left:${x + MAP.W}px;top:${y}px`;
+  } else if (L.vertical) {
+    style = `left:${hit.zone === 'before' ? x - gap : x + MAP.W + gap}px;top:${y}px;height:${L.H}px`;
+  } else {
+    style = `left:${x}px;top:${hit.zone === 'before' ? y - gap : y + L.H + gap}px;width:${MAP.W}px`;
+  }
+  mark.style.cssText = style;
+  const parent = inside ? null : M.parentOf(p, hit.targetId);
+  mark.querySelector('.drop-label').textContent = inside
+    ? (hit.targetId === 'root' ? 'Into the book, at the end' : `Into ${p.nodes[hit.targetId].title}`)
+    : parent.id === 'root' ? 'Top level' : `In ${parent.title}`;
+}
+
+// Hovering over a folded card while dragging unfolds it.
+let mapUnfoldTimer = null;
+let mapUnfoldId = null;
+function mapHoverUnfold(hit) {
+  const want = hit?.zone === 'inside' && state.mapFolded.has(hit.targetId) ? hit.targetId : null;
+  if (want === mapUnfoldId) return;
+  clearTimeout(mapUnfoldTimer);
+  mapUnfoldId = want;
+  if (want) mapUnfoldTimer = setTimeout(() => { mapUnfoldId = null; state.mapFolded.delete(want); renderMapOnly(); }, 650);
+}
+
+function renderMapOnly() {
+  const wrap = document.querySelector('.map-wrap');
+  if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+  document.querySelector('.main.view-map')?.replaceChildren(renderMap());
+}
+
+// Name a new block right on its card.
+function startMapRename(id) {
+  for (const a of M.ancestors(P(), id)) state.mapFolded.delete(a.id);
+  const card = document.querySelector(`.map-card[data-id="${id}"]`);
+  if (!card) return false;
+  const n = P().nodes[id];
+  const title = card.querySelector('.map-title');
+  const input = h('input', { class: 'map-rename', value: n.title, 'aria-label': `Name this ${M.TYPES[n.type].label.toLowerCase()}`, spellcheck: false });
+  title.replaceWith(input);
+  card.draggable = false;
+  card.classList.add('renaming', 'just-added');
+  card.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (commit && v && v !== n.title) { n.title = v; changed(); }
+    const wrap = document.querySelector('.map-wrap');
+    if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+    render();
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  ['click', 'dblclick', 'pointerdown'].forEach((t) => input.addEventListener(t, (e) => e.stopPropagation()));
+  return true;
 }
 
 function mapSelect(id) {

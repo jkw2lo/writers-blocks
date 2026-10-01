@@ -53,9 +53,10 @@ export const SECTIONS = [
   {
     id: 'views', title: 'The four views', html: `
 <ul>
+  <li>The tabs are grouped by stage of work: <strong>Draft</strong> (Write, Notebook), <strong>Shape</strong> (Outline, Map, Board) and <strong>Share</strong> (Read, Export).</li>
   <li><strong>Write</strong>: the editor for the selected block, with its direction, where it sits, and its neighbours above it. Select the book itself to see the overview: premise, word target, and progress by status.</li>
   <li><strong>Board</strong>: the pieces of a part or chapter as index cards. Drag to reorder; edit titles and synopses on the cards. <em>Up a level</em> zooms out.</li>
-  <li><strong>Map</strong>: the whole book drawn as a tree, every part, chapter and section at once, sideways or top-down. Click a card to select it, double-click to write, drag a card onto another to move it, right-click for the block menu. Fold branches on the map (the outline isn’t affected), show synopses on the cards, zoom, and <em>Fit</em> it all on screen.</li>
+  <li><strong>Map</strong>: the whole book drawn as a tree, every part, chapter and section at once, sideways or top-down. Click a card to select it, double-click to write, right-click for the block menu. Hover a card for two <strong>+</strong> buttons: on its outer edge to add a block inside, and in the gap after it to add the next one; name it right there. Drag a card to move it: a line shows where it will land and what it will sit in, and dropping on the middle of a card puts it inside. Fold branches on the map (the outline isn’t affected), show synopses on the cards, zoom, and <em>Fit</em> it all on screen.</li>
   <li><strong>Read</strong>: the whole book (or one part or chapter) as continuous pages, the way a reader will meet it. Double-click any paragraph to jump straight to it in the editor. Turn on <em>Show gaps</em> to see what’s still unwritten.</li>
   <li><strong>Outline</strong>: the whole book as a table. Read down <em>What happens</em> to check the story holds together; read down <em>Why it’s here</em> to check every piece earns its place. Filter to parts or chapters only.</li>
   <li><strong>Notebook</strong>: ideas that don’t have a home yet, as a grid or a free-form canvas. See <em>Brainstorming</em>.</li>
