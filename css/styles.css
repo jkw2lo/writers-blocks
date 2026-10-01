@@ -813,6 +813,8 @@ body:has(.drawer).no-inspector .main, body.focus:has(.drawer) .main { padding-ri
 .map-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .map-controls .seg-control { margin: 0; }
 .map-controls .check { margin: 0; font-size: 12.5px; }
+.map-levels { display: flex; align-items: center; gap: 6px; }
+.map-levels .seg-control { margin: 0; }
 .map-wrap { flex: 1; min-height: 0; overflow: auto; cursor: grab; background-color: var(--bg);
   background-image: radial-gradient(color-mix(in srgb, var(--ink) 9%, transparent) 1px, transparent 1.2px); background-size: 24px 24px; }
 .map-wrap.panning { cursor: grabbing; user-select: none; }

@@ -117,6 +117,7 @@ const ICONS = {
   panel: 'M4 5h16v14H4zM15 5v14',
   sidebar: 'M4 5h16v14H4zM9 5v14',
   collapse: 'M15 6l-6 6 6 6M19 6v12',
+  width: 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4',
   more: 'M6 12h.01M12 12h.01M18 12h.01',
   print: 'M7 9V4h10v5M7 17H5a1 1 0 01-1-1v-5a2 2 0 012-2h12a2 2 0 012 2v5a1 1 0 01-1 1h-2M7 14h10v6H7z',
   share: 'M12 15V4M8 8l4-4 4 4M5 13v6h14v-6',
@@ -3781,14 +3782,13 @@ function mapShell(p, L, svg, cards, z, pad) {
       h('div', { class: 'map-controls' },
         seg('mapDir', [['right', 'Sideways'], ['down', 'Top-down']]),
         h('label', { class: 'check small' }, h('input', { type: 'checkbox', checked: prefs.mapDetails, onchange: (e) => { prefs.mapDetails = e.target.checked; savePrefs(); render(); } }), 'Synopses'),
-        state.mapFolded.size > 0
-          ? h('button', { class: 'btn small ghost', onclick: () => { state.mapFolded.clear(); render(); } }, 'Unfold all')
-          : h('button', { class: 'btn small ghost', title: 'Fold every chapter so you see parts and chapters only', onclick: () => { M.flatten(p).forEach(({ node }) => { if (node.type === 'chapter' && node.children.length) state.mapFolded.add(node.id); }); render(); } }, 'Fold chapters'),
+        mapLevels(p),
         h('div', { class: 'zoom' },
           h('button', { class: 'icon-btn small', title: 'Zoom out', onclick: () => setMapZoom(prefs.mapZoom / 1.2) }, '−'),
           h('button', { class: 'link', title: 'Actual size', onclick: () => setMapZoom(1) }, `${Math.round(z * 100)}%`),
           h('button', { class: 'icon-btn small', title: 'Zoom in', onclick: () => setMapZoom(prefs.mapZoom * 1.2) }, '+')),
-        h('button', { class: 'btn small', title: 'Fit the whole map on screen', onclick: fitMap }, icon('focus'), 'Fit'))),
+        h('button', { class: 'btn small', title: 'Fit the whole map on screen', onclick: fitMap }, icon('focus'), 'Fit'),
+        h('button', { class: 'btn small', title: 'Fit the map’s current width (what’s unfolded) to the screen', onclick: fitMapWidth }, icon('width'), 'Fit width'))),
     wrap);
 }
 
@@ -3936,6 +3936,37 @@ function mapDelete(id) {
   removeNode(id);
 }
 
+// "Show" levels: fold the whole map down to a depth (Parts, Chapters, Sections…), named
+// after what mostly lives at that depth in this book.
+function mapLevels(p) {
+  const all = M.flatten(p);
+  const maxDepth = Math.max(0, ...all.map((x) => x.depth));
+  const label = (d) => {
+    const count = {};
+    all.filter((x) => x.depth === d).forEach((x) => (count[x.node.type] = (count[x.node.type] || 0) + 1));
+    const type = Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0] || 'section';
+    return `${M.TYPES[type].label}s`;
+  };
+  // Folding at depth d hides everything below it.
+  const foldedAt = (d) => new Set(all.filter((x) => x.depth === d && x.node.children.length).map((x) => x.node.id));
+  const same = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
+  const levels = [];
+  for (let d = 0; d < maxDepth; d++) levels.push({ label: label(d), set: foldedAt(d) });
+  levels.push({ label: 'All', set: new Set() });
+  const apply = (set) => {
+    anchorMap(state.selectedId !== 'root' && document.querySelector(`.map-card[data-id="${state.selectedId}"]`) ? state.selectedId : 'root');
+    state.mapFolded = new Set(set);
+    render();
+  };
+  return h('div', { class: 'map-levels' },
+    h('span', { class: 'muted small' }, 'Show'),
+    h('div', { class: 'seg-control' }, levels.map((lv) => h('button', {
+      class: same(lv.set, state.mapFolded) ? 'active' : '',
+      title: lv.label === 'All' ? 'Unfold everything' : `Fold the map down to ${lv.label.toLowerCase()}`,
+      onclick: () => apply(lv.set),
+    }, lv.label))));
+}
+
 function mapSelect(id) {
   state.selectedId = id;
   state.multi.clear();
@@ -3950,6 +3981,15 @@ function setMapZoom(z) {
   const wrap = document.querySelector('.map-wrap');
   if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
   render();
+}
+
+// Zoom so the map's current width (whatever is unfolded) fills the screen, from the top.
+function fitMapWidth() {
+  const wrap = document.querySelector('.map-wrap');
+  if (!wrap) return;
+  const L = state.mapSize || { width: 1000 };
+  state.mapScroll = { left: 0, top: 0 };
+  setMapZoom(Math.max(0.2, Math.min(1.6, (wrap.clientWidth - 80) / L.width)));
 }
 
 function fitMap() {
