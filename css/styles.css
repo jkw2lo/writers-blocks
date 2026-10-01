@@ -730,6 +730,51 @@ body:has(.drawer).no-inspector .main, body.focus:has(.drawer) .main { padding-ri
 .link-chip { cursor: pointer; }
 .link-chip:hover { background: var(--accent-soft); color: var(--accent); }
 
+/* ---------- map view ---------- */
+.main.view-map { display: flex; flex-direction: column; overflow: hidden; }
+.map { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.map-bar-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; padding: 18px clamp(16px, 4vw, 40px) 12px; border-bottom: 1px solid var(--line); }
+.map-bar-top h2 { font: var(--display-w) 26px var(--display); margin: 0 0 2px; }
+.map-bar-top p { margin: 0; }
+.map-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.map-controls .seg-control { margin: 0; }
+.map-controls .check { margin: 0; font-size: 12.5px; }
+.map-wrap { flex: 1; min-height: 0; overflow: auto; cursor: grab; background-color: var(--bg);
+  background-image: radial-gradient(color-mix(in srgb, var(--ink) 9%, transparent) 1px, transparent 1.2px); background-size: 24px 24px; }
+.map-wrap.panning { cursor: grabbing; user-select: none; }
+.map-sizer { position: relative; }
+.map-canvas { position: absolute; transform-origin: 0 0; }
+.map-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.map-edges .edge { fill: none; stroke: var(--line-strong); stroke-width: 1.6; }
+.map-edges .edge.to-part { stroke: color-mix(in srgb, var(--t-part) 55%, var(--line-strong)); stroke-width: 2.2; }
+.map-edges .edge.to-chapter { stroke: color-mix(in srgb, var(--t-chapter) 40%, var(--line-strong)); stroke-width: 1.9; }
+.map-card { position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 7px 12px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--t-section); border-radius: var(--radius-sm); box-shadow: var(--shadow); cursor: pointer; transition: box-shadow .15s, transform .15s; overflow: hidden; }
+.map-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-1px); }
+.map-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.map-card.type-book { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); }
+.map-card.type-part { border-left-color: var(--t-part); }
+.map-card.type-chapter { border-left-color: var(--t-chapter); }
+.map-card.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+.map-card.dragging { opacity: .4; }
+.map-card.drop-inside { outline: 2px solid var(--accent); background: var(--accent-soft) !important; }
+.map-card.drop-before { box-shadow: 0 -3px 0 var(--accent), var(--shadow) !important; }
+.map-card.drop-after { box-shadow: 0 3px 0 var(--accent), var(--shadow) !important; }
+.map-wrap.down .map-card.drop-before { box-shadow: -3px 0 0 var(--accent), var(--shadow) !important; }
+.map-wrap.down .map-card.drop-after { box-shadow: 3px 0 0 var(--accent), var(--shadow) !important; }
+.map-card-top { display: flex; align-items: flex-start; gap: 6px; min-height: 0; }
+.map-card-top .dot { margin-top: 5px; }
+.map-book { width: 14px; height: 14px; color: var(--accent); margin-top: 2px; }
+.map-title { flex: 1; min-width: 0; font-size: 13px; line-height: 1.3; font-weight: 500; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.map-card.type-book .map-title, .map-card.type-part .map-title { font: var(--display-w) 14.5px/1.25 var(--display); }
+.map-card.type-chapter .map-title { font-weight: 600; }
+.map-syn { margin: 0; flex: 1; min-height: 0; font: 12px/1.4 var(--serif); color: var(--ink-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.map-meta { display: flex; align-items: center; gap: 8px; margin-top: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.map-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.map-bar i { display: block; height: 100%; background: var(--accent); }
+.map-fold { flex: none; min-width: 22px; height: 18px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 99px; background: var(--surface); color: var(--ink-2); font: 600 11px/1 var(--ui); }
+.map-fold:hover { border-color: var(--accent); color: var(--accent); }
+.map-fold.folded { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
 /* ---------- read view ---------- */
 .read { max-width: var(--prose-width); margin: 0 auto; padding: 0 clamp(16px, 5vw, 64px) 120px; }
 .read-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
@@ -789,6 +834,8 @@ dialog.import { width: min(620px, calc(100vw - 32px)); }
   .binder { max-height: 38vh; border-right: 0; border-bottom: 1px solid var(--line); }
   .main { overflow: visible; }
   .inspector { border-left: 0; border-top: 1px solid var(--line); }
+  .main.view-map { overflow: visible; }
+  .main.view-map .map-wrap { min-height: 70vh; }
 }
 @media (max-width: 760px) {
   .topbar { flex-wrap: wrap; }

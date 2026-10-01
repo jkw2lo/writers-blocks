@@ -37,6 +37,9 @@ const state = {
   session: null, // this sitting's progress: see startSession()
   drawer: null, // the Echoes / Polish / Story check panel, when open
   readScope: 'root', // what the Read view shows
+  mapFolded: new Set(), // branches folded on the Map (independent of the outline)
+  mapScroll: null,
+  mapFitted: false,
   multi: new Set(), // blocks selected together in the outline (⌘/Ctrl- or Shift-click)
   anchor: null, // where a Shift-click range starts
 };
@@ -45,7 +48,7 @@ const state = {
 const prefs = loadPrefs();
 function loadPrefs() {
   const d = { skin: 'studio', type: {}, typeCss: null, theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10,
-    toured: false, inspector: true, spellcheck: true, readTitles: false, readGaps: true, exportPrefs: null, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
+    toured: false, inspector: true, spellcheck: true, readTitles: false, readGaps: true, mapDir: 'right', mapDetails: false, mapZoom: 1, exportPrefs: null, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
   try { return { ...d, ...JSON.parse(localStorage.getItem('wb-prefs') || '{}') }; } catch { return d; }
 }
 function savePrefs() {
@@ -552,6 +555,9 @@ function startSession() {
   for (const { node } of M.flatten(p)) nodeWords[node.id] = M.treeWords(p, node.id);
   const total = M.treeWords(p);
   state.multi.clear();
+  state.mapFolded.clear();
+  state.mapScroll = null;
+  state.mapFitted = false;
   state.session = { start: Date.now(), baseWords: total, lastTotal: total, nodeWords, touched: new Set(), hit: new Set(), milestones: [], done: [] };
 }
 
@@ -680,7 +686,7 @@ const showHelp = (section) => openHelp({ section, onTour: state.project ? runTou
 const TOUR = [
   { el: null, title: 'Welcome to Writers Blocks', text: 'Here’s a one-minute look around. Use the arrow keys or the buttons, and press Esc to skip. You can replay this from Help any time.' },
   { el: '.binder .tree', title: 'The outline', text: 'Your book as a tree of parts, chapters and sections. Click a block to open it, drag to rearrange (a line shows where it will land), or hover and click <b>+</b> to add inside. Right-click any block for more: rename, move, change its kind, delete.' },
-  { el: '.tabs', title: 'Four ways to look at it', text: '<b>Write</b> one block at a time. <b>Board</b> shows a chapter as index cards. <b>Outline</b> is the whole book as a table. <b>Read</b> shows it as continuous pages. <b>Notebook</b> holds loose ideas.' },
+  { el: '.tabs', title: 'Four ways to look at it', text: '<b>Write</b> one block at a time. <b>Board</b> shows a chapter as index cards. <b>Outline</b> is the whole book as a table. <b>Map</b> draws it as a tree. <b>Read</b> shows it as continuous pages. <b>Notebook</b> holds loose ideas.' },
   { el: '.direction', title: 'Every block has a direction', text: '<b>What happens</b> and <b>Why it’s here</b> keep you pointed somewhere. Below them are the blocks just before and after, so you know what you’re writing toward.' },
   { el: '.toolbar', title: 'The writing toolbar', text: 'Formatting, and <b>Split here</b> to break a block in two. On the right are your writing aids: typing sounds, typewriter scrolling, and fade the rest.' },
   { el: '.inspector', title: 'This block, and ideas', text: 'Set a block’s status and word target, add tags and notes, and move it around. Further down, <b>Brainstorm</b> deals prompts, runs freewriting sprints, and collides ideas. Hide this panel with the panel button in the top bar when you want quiet.' },
@@ -1236,7 +1242,7 @@ function bookshelf() {
 
 function renderTopbar() {
   const root = P().nodes.root;
-  const views = [['write', 'Write'], ['board', 'Board'], ['outline', 'Outline'], ['read', 'Read'], ['notebook', `Notebook${P().notebook.length ? ` · ${P().notebook.length}` : ''}`]];
+  const views = [['write', 'Write'], ['board', 'Board'], ['outline', 'Outline'], ['map', 'Map'], ['read', 'Read'], ['notebook', `Notebook${P().notebook.length ? ` · ${P().notebook.length}` : ''}`]];
   return h('header', { class: 'topbar' },
     h('div', { class: 'brand', title: 'Writers Blocks' }, h('div', { class: 'logo-blocks small', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))),
     fileMenu(),
@@ -1702,7 +1708,7 @@ function contextMenu(at, items, { onClose, above = false } = {}) {
 // ---- render: main views ------------------------------------------------------------
 
 function renderMain() {
-  const view = { write: renderWrite, board: renderBoard, outline: renderOutline, read: renderRead, notebook: renderNotebook, trash: renderTrash }[state.view] || renderWrite;
+  const view = { write: renderWrite, board: renderBoard, outline: renderOutline, map: renderMap, read: renderRead, notebook: renderNotebook, trash: renderTrash }[state.view] || renderWrite;
   return h('main', { class: `main view-${state.view}` }, view());
 }
 
@@ -2530,8 +2536,8 @@ function renderIdeasFor(n) {
 
 function renderInspectorOnly() {
   document.querySelector('.inspector')?.replaceWith(renderInspector());
-  document.querySelectorAll('.o-row.selected, .card.selected').forEach((r) => r.classList.remove('selected'));
-  document.querySelectorAll(`.o-row[data-id="${state.selectedId}"], .card[data-id="${state.selectedId}"]`).forEach((r) => r.classList.add('selected'));
+  document.querySelectorAll('.o-row.selected, .card.selected, .map-card.selected').forEach((r) => r.classList.remove('selected'));
+  document.querySelectorAll(`.o-row[data-id="${state.selectedId}"], .card[data-id="${state.selectedId}"], .map-card[data-id="${state.selectedId}"]`).forEach((r) => r.classList.add('selected'));
   document.querySelectorAll('.binder .row.selected').forEach((r) => r.classList.remove('selected'));
   document.querySelector(`.binder .row[data-id="${state.selectedId}"]`)?.classList.add('selected');
 }
@@ -3441,6 +3447,187 @@ async function finishImport(tree, o) {
   render();
   toast(`Imported ${fmt(words)} words. Have a look at the outline.`);
   if (S.canAutosave) await saveAs();
+}
+
+// ---- Map view --------------------------------------------------------------------------------
+// The whole book as a branching tree: the book, then parts, chapters and sections,
+// everything open. Click to select, double-click to write, drag a card onto another to
+// move it, right-click for the block menu. Branches fold on the map only (the outline
+// keeps its own open/closed state).
+
+const MAP = { W: 214, H: 62, HD: 104, GAP_DEPTH: 64, GAP_SIBLING: 14 };
+
+function mapLayout(p) {
+  const vertical = prefs.mapDir === 'down';
+  const H = prefs.mapDetails ? MAP.HD : MAP.H;
+  const step = vertical ? MAP.W + MAP.GAP_SIBLING : H + MAP.GAP_SIBLING;
+  const depthStep = vertical ? H + MAP.GAP_DEPTH : MAP.W + MAP.GAP_DEPTH;
+  const items = [];
+  const edges = [];
+  let cursor = 0;
+  const place = (id, depth) => {
+    const n = p.nodes[id];
+    const kids = state.mapFolded.has(id) ? [] : n.children.filter((c) => p.nodes[c]);
+    const item = { id, depth };
+    items.push(item);
+    if (kids.length) {
+      const placed = kids.map((c) => place(c, depth + 1));
+      item.cross = (placed[0].cross + placed[placed.length - 1].cross) / 2;
+      placed.forEach((k) => edges.push([item, k]));
+    } else {
+      item.cross = cursor;
+      cursor += step;
+    }
+    return item;
+  };
+  place('root', 0);
+  for (const it of items) {
+    it.x = vertical ? it.cross : it.depth * depthStep;
+    it.y = vertical ? it.depth * depthStep : it.cross;
+  }
+  const maxDepth = Math.max(...items.map((i) => i.depth));
+  const width = vertical ? Math.max(cursor - MAP.GAP_SIBLING, MAP.W) : maxDepth * depthStep + MAP.W;
+  const height = vertical ? maxDepth * depthStep + H : Math.max(cursor - MAP.GAP_SIBLING, H);
+  return { items, edges, width, height, H, vertical };
+}
+
+function mapEdgePath(a, b, L) {
+  const { H, vertical } = L;
+  if (vertical) {
+    const x1 = a.x + MAP.W / 2; const y1 = a.y + H;
+    const x2 = b.x + MAP.W / 2; const y2 = b.y;
+    const my = (y1 + y2) / 2;
+    return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;
+  }
+  const x1 = a.x + MAP.W; const y1 = a.y + H / 2;
+  const x2 = b.x; const y2 = b.y + H / 2;
+  const mx = (x1 + x2) / 2;
+  return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+}
+
+function renderMap() {
+  const p = P();
+  const L = mapLayout(p);
+  const z = prefs.mapZoom;
+  const pad = 40;
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('class', 'map-edges');
+  svg.setAttribute('width', L.width);
+  svg.setAttribute('height', L.height);
+  for (const [a, b] of L.edges) {
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', mapEdgePath(a, b, L));
+    path.setAttribute('class', `edge to-${p.nodes[b.id].type}`);
+    svg.append(path);
+  }
+
+  const descendants = (id) => M.flatten(p, id).length;
+  const cards = L.items.map((it) => {
+    const n = p.nodes[it.id];
+    const isRoot = it.id === 'root';
+    const words = M.treeWords(p, it.id);
+    const target = isRoot ? p.targetWords : n.targetWords;
+    const folded = state.mapFolded.has(it.id);
+    const card = h('div', {
+      class: `map-card type-${isRoot ? 'book' : n.type} ${it.id === state.selectedId ? 'selected' : ''}`,
+      'data-id': it.id,
+      style: `left:${it.x}px;top:${it.y}px;width:${MAP.W}px;height:${L.H}px`,
+      title: n.synopsis || n.title,
+      tabindex: 0,
+      onclick: (e) => { if (!e.target.closest('button')) mapSelect(it.id); },
+      ondblclick: (e) => { if (!e.target.closest('button')) select(it.id, 'write'); },
+      onkeydown: (e) => { if (e.key === 'Enter') select(it.id, 'write'); },
+      oncontextmenu: (e) => { if (isRoot) return; e.preventDefault(); mapSelect(it.id); contextMenu({ x: e.clientX, y: e.clientY }, blockMenuItems([it.id])); },
+    },
+    h('div', { class: 'map-card-top' },
+      isRoot ? icon('book', 'map-book') : h('span', { class: `dot status-${n.status}`, title: n.status }),
+      h('span', { class: 'map-title' }, n.title)),
+    prefs.mapDetails && h('p', { class: 'map-syn' }, n.synopsis || h('span', { class: 'muted' }, 'No synopsis yet.')),
+    h('div', { class: 'map-meta' },
+      h('span', { class: 'map-wc' }, `${fmt(words)} w`),
+      target ? h('span', { class: 'map-bar', title: `${fmt(words)} of ${fmt(target)} words` }, h('i', { style: `width:${Math.min(100, (words / target) * 100)}%` })) : h('span', { class: 'spacer' }),
+      n.children.length > 0 && h('button', {
+        class: `map-fold ${folded ? 'folded' : ''}`,
+        title: folded ? `Show the ${descendants(it.id)} blocks inside` : 'Fold this branch (on the map only)',
+        onclick: (e) => { e.stopPropagation(); if (folded) state.mapFolded.delete(it.id); else state.mapFolded.add(it.id); render(); },
+      }, folded ? `+${descendants(it.id)}` : '−')));
+    if (!isRoot) makeDraggable(card, 'node', it.id, () => carried(it.id));
+    makeDropTarget(card, it.id, { horizontal: L.vertical });
+    return card;
+  });
+
+  const canvas = h('div', { class: 'map-canvas', style: `width:${L.width}px;height:${L.height}px;transform:scale(${z});left:${pad}px;top:${pad}px` }, svg, cards);
+  const sizer = h('div', { class: 'map-sizer', style: `width:${L.width * z + pad * 2}px;height:${L.height * z + pad * 2}px` }, canvas);
+  const wrap = h('div', { class: `map-wrap ${L.vertical ? 'down' : ''}` }, sizer);
+
+  // Drag empty space to pan; ⌘/Ctrl + scroll to zoom.
+  wrap.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('.map-card')) return;
+    const sx = e.clientX; const sy = e.clientY; const sl = wrap.scrollLeft; const st = wrap.scrollTop;
+    wrap.classList.add('panning');
+    const move = (ev) => { wrap.scrollLeft = sl - (ev.clientX - sx); wrap.scrollTop = st - (ev.clientY - sy); };
+    const up = () => { wrap.classList.remove('panning'); removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+  });
+  wrap.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    setMapZoom(prefs.mapZoom * (e.deltaY < 0 ? 1.1 : 0.9));
+  }, { passive: false });
+  wrap.addEventListener('scroll', () => { state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop }; });
+  requestAnimationFrame(() => {
+    if (state.mapScroll) { wrap.scrollLeft = state.mapScroll.left; wrap.scrollTop = state.mapScroll.top; }
+    else if (!state.mapFitted) { state.mapFitted = true; fitMap(); }
+  });
+
+  const seg = (key, choices) => h('div', { class: 'seg-control' }, choices.map(([v, l]) => h('button', {
+    class: prefs[key] === v ? 'active' : '', onclick: () => { prefs[key] = v; savePrefs(); state.mapScroll = null; render(); },
+  }, l)));
+  const totalBlocks = M.flatten(p).length;
+  return h('div', { class: 'map' },
+    h('div', { class: 'map-bar-top' },
+      h('div', null,
+        h('h2', null, 'Map'),
+        h('p', { class: 'muted small' }, `${totalBlocks} blocks · click to select, double-click to write, drag onto another card to move, right-click for more.`)),
+      h('div', { class: 'map-controls' },
+        seg('mapDir', [['right', 'Sideways'], ['down', 'Top-down']]),
+        h('label', { class: 'check small' }, h('input', { type: 'checkbox', checked: prefs.mapDetails, onchange: (e) => { prefs.mapDetails = e.target.checked; savePrefs(); render(); } }), 'Synopses'),
+        state.mapFolded.size > 0
+          ? h('button', { class: 'btn small ghost', onclick: () => { state.mapFolded.clear(); render(); } }, 'Unfold all')
+          : h('button', { class: 'btn small ghost', title: 'Fold every chapter so you see parts and chapters only', onclick: () => { M.flatten(p).forEach(({ node }) => { if (node.type === 'chapter' && node.children.length) state.mapFolded.add(node.id); }); render(); } }, 'Fold chapters'),
+        h('div', { class: 'zoom' },
+          h('button', { class: 'icon-btn small', title: 'Zoom out', onclick: () => setMapZoom(prefs.mapZoom / 1.2) }, '−'),
+          h('button', { class: 'link', title: 'Actual size', onclick: () => setMapZoom(1) }, `${Math.round(z * 100)}%`),
+          h('button', { class: 'icon-btn small', title: 'Zoom in', onclick: () => setMapZoom(prefs.mapZoom * 1.2) }, '+')),
+        h('button', { class: 'btn small', title: 'Fit the whole map on screen', onclick: fitMap }, icon('focus'), 'Fit'))),
+    wrap);
+}
+
+function mapSelect(id) {
+  state.selectedId = id;
+  state.multi.clear();
+  document.querySelectorAll('.map-card.selected').forEach((c) => c.classList.remove('selected'));
+  document.querySelector(`.map-card[data-id="${id}"]`)?.classList.add('selected');
+  renderInspectorOnly();
+}
+
+function setMapZoom(z) {
+  prefs.mapZoom = Math.min(2, Math.max(0.2, Math.round(z * 100) / 100));
+  savePrefs();
+  const wrap = document.querySelector('.map-wrap');
+  if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+  render();
+}
+
+function fitMap() {
+  const wrap = document.querySelector('.map-wrap');
+  if (!wrap) return;
+  const L = mapLayout(P());
+  const z = Math.min(1.2, (wrap.clientWidth - 80) / L.width, (wrap.clientHeight - 80) / L.height);
+  state.mapScroll = { left: 0, top: 0 };
+  setMapZoom(Math.max(0.2, z));
 }
 
 // ---- global keys & lifecycle ------------------------------------------------------------
