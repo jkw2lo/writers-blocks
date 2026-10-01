@@ -852,7 +852,7 @@ function afterAdd(n) {
     if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
   }
   render();
-  if (state.view === 'map' && startMapRename(n.id)) return;
+  if (state.view === 'map' && startMapRename(n.id, { fresh: true })) return;
   const card = state.view === 'board' && document.querySelector(`.card[data-id="${n.id}"] .card-title`);
   if (card) { card.focus(); card.select(); return; }
   if (!startRename(n.id, { fresh: true })) toast(`Added “${n.title}” to “${M.parentOf(P(), n.id).title}”.`, { undo: true });
@@ -903,6 +903,47 @@ function setStatus(ids, status) {
   changed();
   render();
   if (finished.length) blockDone(finished[finished.length - 1]);
+}
+
+// Take blocks out of the structure and into the notebook, for pieces that don't have a
+// home yet. A part or chapter becomes a labelled cluster: a label note with its title,
+// then one note per piece inside (title, synopsis, text). Undo puts it all back.
+function moveToNotebook(ids) {
+  const p = P();
+  ids = outermost(ids.filter((id) => id !== 'root'));
+  if (!ids.length) return;
+  snapshot();
+  const placed = p.notebook.filter((nt) => nt.x != null);
+  let x = placed.length ? Math.max(...placed.map((nt) => nt.x)) + 300 : 60;
+  let made = 0;
+  for (const id of ids) {
+    const top = p.nodes[id];
+    let y = 60;
+    const batch = [];
+    const add = (text, extra) => { batch.push(M.makeNote(text, { source: 'outline', x, y, ...extra })); y += extra.color === 'label' ? 70 : 150; made += 1; };
+    const textOf = (n) => [n.title, n.synopsis, M.stripHtml(n.content).trim()].filter(Boolean).join('\n\n');
+    if (top.children.length) {
+      add(top.title, { color: 'label' });
+      const inner = [{ node: top }, ...M.flatten(p, id)].filter(({ node }) => node.synopsis.trim() || node.content || !node.children.length);
+      for (const { node } of inner) add(node === top ? [top.synopsis, M.stripHtml(top.content).trim()].filter(Boolean).join('\n\n') || top.title : textOf(node), { color: node.children.length ? 'peach' : 'yellow' });
+    } else {
+      add(textOf(top), { color: 'yellow' });
+    }
+    // The grid lists newest first, so add them last-to-first: the label reads as the cluster's heading.
+    p.notebook.push(...batch.reverse());
+    M.deleteNode(p, id);
+    delete state.aiResults[id];
+    x += 300;
+  }
+  state.multi.clear();
+  if (!p.nodes[state.selectedId]) state.selectedId = 'root';
+  changed();
+  if (state.view === 'map') {
+    const wrap = document.querySelector('.map-wrap');
+    if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+  }
+  render();
+  toast(`Moved to the notebook as ${made} note${made === 1 ? '' : 's'}. When it finds its place, use “Make it a block”.`, { undo: true });
 }
 
 function moveInto(ids, parentId) {
@@ -1616,7 +1657,7 @@ function blockMenuItems(ids) {
   if (one) {
     items.push({ label: 'Open', run: () => { state.multi.clear(); select(one.id, 'write'); } });
     if (one.children.length) items.push({ label: 'Open as board', run: () => select(one.id, 'board') });
-    items.push({ label: 'Rename', hint: 'F2', run: () => startRename(one.id) || focusTitle() });
+    items.push({ label: 'Rename', hint: 'F2', run: () => (state.view === 'map' ? startMapRename(one.id) : startRename(one.id)) || focusTitle() });
     items.push('sep',
       { label: `Add ${label(M.TYPES[one.type].child)} inside`, icon: 'plus', run: () => addChild(one.id) },
       { label: `Add ${label(one.type)} after`, run: () => addAfter(one.id) },
@@ -1629,6 +1670,7 @@ function blockMenuItems(ids) {
     sub: ['part', 'chapter', 'section'].map((t) => ({ label: M.TYPES[t].label, checked: nodes.every((n) => n.type === t), run: () => setKind(ids, t) })),
   });
   items.push({ label: 'Move to', sub: () => moveTargets(ids) });
+  items.push({ label: 'Move to notebook', icon: 'note', run: () => moveToNotebook(ids) });
   items.push({
     label: 'Status',
     sub: M.STATUSES.map((st) => ({ label: st.label, dot: st.id, checked: nodes.every((n) => n.status === st.id), run: () => setStatus(ids, st.id) })),
@@ -1996,6 +2038,7 @@ const CANVAS_W = 4000;
 const CANVAS_H = 3000;
 const NOTE_W = 240;
 const SOURCES = {
+  outline: '↩ From the outline',
   ai: '✦ AI',
   freewrite: '⏱ Freewrite',
   prompt: '❖ Prompt',
@@ -3583,13 +3626,25 @@ function renderMap() {
       title: n.synopsis || n.title,
       tabindex: 0,
       onclick: (e) => { if (!e.target.closest('button')) mapSelect(it.id); },
-      ondblclick: (e) => { if (!e.target.closest('button')) select(it.id, 'write'); },
-      onkeydown: (e) => { if (e.key === 'Enter') select(it.id, 'write'); },
+      // Double-click the title to rename it here; anywhere else on the card opens it.
+      ondblclick: (e) => {
+        if (e.target.closest('button, input')) return;
+        if (e.target.closest('.map-title')) startMapRename(it.id);
+        else select(it.id, 'write');
+      },
+      onkeydown: (e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter') select(it.id, 'write');
+        if (e.key === 'F2') { e.preventDefault(); startMapRename(it.id); }
+        if ((e.key === 'Delete' || e.key === 'Backspace') && !isRoot) { e.preventDefault(); mapDelete(it.id); }
+      },
       oncontextmenu: (e) => { if (isRoot) return; e.preventDefault(); mapSelect(it.id); contextMenu({ x: e.clientX, y: e.clientY }, blockMenuItems([it.id])); },
     },
     h('div', { class: 'map-card-top' },
       isRoot ? icon('book', 'map-book') : h('span', { class: `dot status-${n.status}`, title: n.status }),
-      h('span', { class: 'map-title' }, n.title)),
+      h('span', { class: 'map-title', title: 'Double-click to rename' }, n.title),
+      h('button', { class: 'map-rename-btn', tabindex: -1, title: 'Rename (F2)', 'aria-label': `Rename ${n.title}`, onclick: (e) => { e.stopPropagation(); startMapRename(it.id); } }, icon('pen')),
+      !isRoot && h('button', { class: 'map-rename-btn map-del-btn', tabindex: -1, title: 'Move to the Trash (Delete)', 'aria-label': `Delete ${n.title}`, onclick: (e) => { e.stopPropagation(); mapDelete(it.id); } }, icon('close'))),
     prefs.mapDetails && h('p', { class: 'map-syn' }, n.synopsis || h('span', { class: 'muted' }, 'No synopsis yet.')),
     h('div', { class: 'map-meta' },
       h('span', { class: 'map-wc' }, `${fmt(words)} w`),
@@ -3669,7 +3724,7 @@ function renderMap() {
     h('div', { class: 'map-bar-top' },
       h('div', null,
         h('h2', null, 'Map'),
-        h('p', { class: 'muted small' }, `${totalBlocks} blocks · click to select, double-click to write, drag onto another card to move, right-click for more.`)),
+        h('p', { class: 'muted small' }, `${totalBlocks} blocks · double-click a title to rename it, double-click a card to write, drag to move, right-click for more.`)),
       h('div', { class: 'map-controls' },
         seg('mapDir', [['right', 'Sideways'], ['down', 'Top-down']]),
         h('label', { class: 'check small' }, h('input', { type: 'checkbox', checked: prefs.mapDetails, onchange: (e) => { prefs.mapDetails = e.target.checked; savePrefs(); render(); } }), 'Synopses'),
@@ -3744,8 +3799,8 @@ function renderMapOnly() {
   document.querySelector('.main.view-map')?.replaceChildren(renderMap());
 }
 
-// Name a new block right on its card.
-function startMapRename(id) {
+// Name (or rename) a block right on its card.
+function startMapRename(id, { fresh = false } = {}) {
   for (const a of M.ancestors(P(), id)) state.mapFolded.delete(a.id);
   const card = document.querySelector(`.map-card[data-id="${id}"]`);
   if (!card) return false;
@@ -3754,7 +3809,8 @@ function startMapRename(id) {
   const input = h('input', { class: 'map-rename', value: n.title, 'aria-label': `Name this ${M.TYPES[n.type].label.toLowerCase()}`, spellcheck: false });
   title.replaceWith(input);
   card.draggable = false;
-  card.classList.add('renaming', 'just-added');
+  card.classList.add('renaming');
+  if (fresh) card.classList.add('just-added');
   card.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   input.focus();
   input.select();
@@ -3776,6 +3832,13 @@ function startMapRename(id) {
   input.addEventListener('blur', () => finish(true));
   ['click', 'dblclick', 'pointerdown'].forEach((t) => input.addEventListener(t, (e) => e.stopPropagation()));
   return true;
+}
+
+// Delete from the map without losing your place on it (it goes to the Trash; Undo works).
+function mapDelete(id) {
+  const wrap = document.querySelector('.map-wrap');
+  if (wrap) state.mapScroll = { left: wrap.scrollLeft, top: wrap.scrollTop };
+  removeNode(id);
 }
 
 function mapSelect(id) {
@@ -4055,6 +4118,11 @@ document.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); state.handle ? save() : saveAs(); }
   if (mod && e.key === '.') { e.preventDefault(); toggleFocus(); }
+  if (state.view === 'map' && (e.key === 'Delete' || e.key === 'Backspace') && !mod && state.selectedId !== 'root'
+    && !e.target.closest?.('input, textarea, select, [contenteditable="true"], .map-card, dialog') && !document.querySelector('dialog[open], .ctx')) {
+    e.preventDefault();
+    mapDelete(state.selectedId);
+  }
   if (mod && !e.shiftKey && e.key === '\\') { e.preventDefault(); toggleInspector(); }
   if (mod && e.shiftKey && (e.key === '|' || e.key === '\\')) { e.preventDefault(); toggleBinder(); }
   if (mod && e.key.toLowerCase() === 'e' && !document.querySelector('dialog[open]')) { e.preventDefault(); openExport(); }
