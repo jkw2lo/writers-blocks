@@ -14,6 +14,7 @@ New to it? The app has a **quick start** on how to approach a project, a searcha
   - **Write**: a distraction-light editor. Above it you see the block's direction, where it sits (breadcrumbs), and the blocks just before and after it, so you always know what you're writing *toward*.
   - **Board**: index cards for the pieces of a part or chapter. Drag to reorder, and edit synopses right on the card.
   - **Outline**: the whole book as a table. Read down "What happens" to check the story holds together; read down "Why it's here" to check every piece earns its place.
+  - **Read**: the book (or one part or chapter) as continuous pages. Double-click any paragraph to jump to it in the editor.
   - **Notebook**: loose fragments and ideas with no home yet, as a **Grid** or a spatial **Canvas** (see *Brainstorming*). Drag an idea onto the outline (or use *Make it a block*) and it becomes a block.
 - **Restructure freely**: drag blocks anywhere in the left-hand outline; a line shows exactly where they'll land and what they'll sit in, and closed blocks open as you hover. Select several with ⌘/Ctrl- or Shift-click and move them together. Right-click (or ⋯) any block to rename it, turn it into a part/chapter/section, move it somewhere else, change its status or delete it. **Split** a block at the cursor, **merge** a block with the next one, and undo structural changes. New blocks appear in place with their name ready to type, without pulling you away from what you're looking at.
 - **Break it down**: every part and chapter shows its pieces and word counts, so a book becomes a list of sections you can write one sitting at a time.
@@ -29,6 +30,10 @@ New to it? The app has a **quick start** on how to approach a project, a searcha
   - **Typewriter scrolling**: keeps the line you're writing in the middle of the screen.
   - **Fade the rest**: dims every paragraph except the one you're in.
 - **Watch it come together**: a progress ring for the book's word target, a "+N this session" count, and a little confetti when a block hits its word target, you mark something Done, or the book passes a milestone (5,000 words, novelette length, novel length…). Closing a project shows a summary of the session. Celebrations can be turned off in Settings.
+- **Trash**: deleted blocks wait in the Trash (kept in your project file) until you restore them or delete them for good.
+- **Echoes**: a repetition checker for close repeats, overused words, repeated phrases and crutch words, highlighted in place. Runs locally, no AI.
+- **Spell check** via your browser's built-in dictionary (works offline; toggle in Settings).
+- **Import** a manuscript from Word (.docx), Markdown, plain text or HTML. Headings become parts and chapters, scene breaks become sections.
 - **Export, print and share** (*File → Export or print…*, `⌘/Ctrl + E`), with a live preview:
   - **Manuscript**: just the writing, as a reading copy or a double-spaced copy for marking up on paper
   - **Working draft**: the writing with its skeleton (direction, status, notes) and lined space for blocks not written yet
@@ -81,6 +86,9 @@ Off by default. Turn it on in **Settings** and add your own [Anthropic API key](
 | Break it into smaller pieces | Proposes 3–8 sub-sections you can add with one click |
 | Review the structure | (Book level) pacing, gaps, redundancy, and threads that don't resolve |
 | Ask | A free-form question, with the outline and current block as context |
+| Polish | Select a passage for alternative wordings, or line-edit a whole block; suggestions apply with one click |
+| Story check | Reads the manuscript for plot holes, continuity slips, dropped threads and motivation gaps |
+| Import (AI) | Finds chapters and scenes in an imported manuscript and writes a synopsis for each block |
 
 Privacy: your key is kept in memory for the current tab only, unless you tick "remember on this device". Text is sent straight from your browser to Anthropic, and only when you click an action. It sends the outline (titles, synopses, purposes) and the current block's text, not the whole manuscript. Uses Claude Opus 5 by default (Sonnet 5 is available as a faster, cheaper option).
 
@@ -111,6 +119,8 @@ js/model.js             the book data model (tree ops, word counts, export)
 js/storage.js           saving/opening files on your disk
 js/ai.js                optional assistant (prompts + Claude API calls)
 js/help.js              quick start, help guide and guided tour
+js/echoes.js            repetition checker (Echoes)
+js/import.js            importing .docx/.md/.txt/.html into blocks
 js/export.js            exports: manuscript, working draft, outline, snapshot → PDF/Word/Markdown/text/HTML
 js/sound.js             typing sounds (Web Audio, no files)
 js/celebrate.js         confetti

@@ -6,6 +6,8 @@ import * as Sound from './sound.js';
 import { confetti } from './celebrate.js';
 import { openHelp, startTour } from './help.js';
 import * as X from './export.js';
+import * as E from './echoes.js';
+import * as I from './import.js';
 
 // ---- state -------------------------------------------------------------------
 
@@ -33,6 +35,8 @@ const state = {
   canvasScroll: null,
   shelf: [], // recent projects, for the welcome screen (Chromium only)
   session: null, // this sitting's progress: see startSession()
+  drawer: null, // the Echoes / Polish / Story check panel, when open
+  readScope: 'root', // what the Read view shows
   multi: new Set(), // blocks selected together in the outline (⌘/Ctrl- or Shift-click)
   anchor: null, // where a Shift-click range starts
 };
@@ -41,7 +45,7 @@ const state = {
 const prefs = loadPrefs();
 function loadPrefs() {
   const d = { skin: 'studio', type: {}, typeCss: null, theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10,
-    toured: false, inspector: true, exportPrefs: null, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
+    toured: false, inspector: true, spellcheck: true, readTitles: false, readGaps: true, exportPrefs: null, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
   try { return { ...d, ...JSON.parse(localStorage.getItem('wb-prefs') || '{}') }; } catch { return d; }
 }
 function savePrefs() {
@@ -108,6 +112,10 @@ const ICONS = {
   more: 'M6 12h.01M12 12h.01M18 12h.01',
   print: 'M7 9V4h10v5M7 17H5a1 1 0 01-1-1v-5a2 2 0 012-2h12a2 2 0 012 2v5a1 1 0 01-1 1h-2M7 14h10v6H7z',
   share: 'M12 15V4M8 8l4-4 4 4M5 13v6h14v-6',
+  pen: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+  echo: 'M4 7h9M4 12h13M4 17h9M17 5l3 2-3 2M17 15l3 2-3 2',
+  import: 'M12 4v11M8 11l4 4 4-4M5 19h14',
+  read: 'M3 5h6a3 3 0 013 3v11a2 2 0 00-2-2H3zM21 5h-6a3 3 0 00-3 3v11a2 2 0 012-2h7z',
 };
 function icon(name, cls = '') {
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -659,7 +667,9 @@ function closeProject() {
   state.project = null;
   state.session = null;
   state.dirty = false;
+  state.drawer = null;
   render();
+  paintDrawer();
   refreshShelf();
 }
 
@@ -670,7 +680,7 @@ const showHelp = (section) => openHelp({ section, onTour: state.project ? runTou
 const TOUR = [
   { el: null, title: 'Welcome to Writers Blocks', text: 'Here’s a one-minute look around. Use the arrow keys or the buttons, and press Esc to skip. You can replay this from Help any time.' },
   { el: '.binder .tree', title: 'The outline', text: 'Your book as a tree of parts, chapters and sections. Click a block to open it, drag to rearrange (a line shows where it will land), or hover and click <b>+</b> to add inside. Right-click any block for more: rename, move, change its kind, delete.' },
-  { el: '.tabs', title: 'Four ways to look at it', text: '<b>Write</b> one block at a time. <b>Board</b> shows a chapter as index cards. <b>Outline</b> is the whole book as a table. <b>Notebook</b> holds loose ideas.' },
+  { el: '.tabs', title: 'Four ways to look at it', text: '<b>Write</b> one block at a time. <b>Board</b> shows a chapter as index cards. <b>Outline</b> is the whole book as a table. <b>Read</b> shows it as continuous pages. <b>Notebook</b> holds loose ideas.' },
   { el: '.direction', title: 'Every block has a direction', text: '<b>What happens</b> and <b>Why it’s here</b> keep you pointed somewhere. Below them are the blocks just before and after, so you know what you’re writing toward.' },
   { el: '.toolbar', title: 'The writing toolbar', text: 'Formatting, and <b>Split here</b> to break a block in two. On the right are your writing aids: typing sounds, typewriter scrolling, and fade the rest.' },
   { el: '.inspector', title: 'This block, and ideas', text: 'Set a block’s status and word target, add tags and notes, and move it around. Further down, <b>Brainstorm</b> deals prompts, runs freewriting sprints, and collides ideas. Hide this panel with the panel button in the top bar when you want quiet.' },
@@ -847,18 +857,16 @@ function removeNodes(ids) {
   const p = P();
   ids = outermost(ids.filter((id) => id !== 'root'));
   if (!ids.length) return;
-  const words = ids.reduce((sum, id) => sum + M.treeWords(p, id), 0);
-  const inside = ids.reduce((sum, id) => sum + M.flatten(p, id).length, 0);
+  // Nothing is lost: deleted blocks go to the Trash, so no confirmation needed.
   const name = ids.length === 1 ? `“${p.nodes[ids[0]].title}”` : `${ids.length} blocks`;
-  if ((words > 0 || inside > 0) && !confirm(`Delete ${name}${inside ? ` and ${inside} block${inside > 1 ? 's' : ''} inside` : ''}${words ? ` (${fmt(words)} words)` : ''}? You can undo this.`)) return;
   snapshot();
   const fallback = M.parentOf(p, ids[0])?.id || 'root';
-  for (const id of ids) { M.deleteNode(p, id); delete state.aiResults[id]; }
+  for (const id of ids) { M.trashNode(p, id); delete state.aiResults[id]; }
   state.multi.clear();
   if (!p.nodes[state.selectedId]) state.selectedId = p.nodes[fallback] ? fallback : 'root';
   changed();
   render();
-  toast(`Deleted ${name}.`, { undo: true });
+  toast(`Moved ${name} to the Trash.`, { undo: true });
 }
 const removeNode = (id) => removeNodes([id]);
 
@@ -1149,6 +1157,7 @@ function render() {
   if (binderScroll != null) document.querySelector('.tree').scrollTop = binderScroll;
   state.lastRenderKey = `${state.view}:${state.selectedId}`;
   renderStatus();
+  paintDrawer();
 }
 
 function renderWelcome() {
@@ -1162,6 +1171,7 @@ function renderWelcome() {
         h('div', { class: 'welcome-actions' },
           h('button', { class: 'btn primary', onclick: cmdNew }, 'Start a new project'),
           h('button', { class: 'btn', onclick: cmdOpen }, 'Open a project file…'),
+          h('button', { class: 'btn', onclick: openImport }, 'Import a manuscript…'),
           h('button', { class: 'btn ghost', onclick: cmdSample }, 'Explore a sample'),
         ),
         bookshelf(),
@@ -1226,7 +1236,7 @@ function bookshelf() {
 
 function renderTopbar() {
   const root = P().nodes.root;
-  const views = [['write', 'Write'], ['board', 'Board'], ['outline', 'Outline'], ['notebook', `Notebook${P().notebook.length ? ` · ${P().notebook.length}` : ''}`]];
+  const views = [['write', 'Write'], ['board', 'Board'], ['outline', 'Outline'], ['read', 'Read'], ['notebook', `Notebook${P().notebook.length ? ` · ${P().notebook.length}` : ''}`]];
   return h('header', { class: 'topbar' },
     h('div', { class: 'brand', title: 'Writers Blocks' }, h('div', { class: 'logo-blocks small', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))),
     fileMenu(),
@@ -1261,8 +1271,10 @@ function fileMenu() {
       item('Open…', cmdOpen),
       item(S.canAutosave ? 'Save to a new file…' : 'Save (download)', saveAs, S.canAutosave ? '' : '⌘S'),
       h('hr'),
+      item('Import a manuscript…', openImport),
       item('Export or print…', () => openExport(), `${MOD}E`),
       item('Download a backup copy', () => cmdExport('json')),
+      item(`Trash${P().trash.length ? ` (${P().trash.length})` : ''}`, () => { state.view = 'trash'; render(); }),
       h('hr'),
       item('Close project', closeProject),
     ));
@@ -1376,6 +1388,10 @@ function renderBinder() {
       class: `row notebook-link ${state.view === 'notebook' ? 'selected' : ''}`,
       onclick: () => { state.view = 'notebook'; render(); },
     }, icon('note', 'type-icon'), h('span', { class: 'row-title' }, 'Notebook'), h('span', { class: 'wc' }, p.notebook.length || '')),
+    p.trash.length > 0 && h('button', {
+      class: `row notebook-link trash-link ${state.view === 'trash' ? 'selected' : ''}`,
+      onclick: () => { state.view = 'trash'; render(); },
+    }, icon('trash', 'type-icon'), h('span', { class: 'row-title' }, 'Trash'), h('span', { class: 'wc' }, p.trash.length)),
   );
 }
 
@@ -1686,7 +1702,7 @@ function contextMenu(at, items, { onClose, above = false } = {}) {
 // ---- render: main views ------------------------------------------------------------
 
 function renderMain() {
-  const view = { write: renderWrite, board: renderBoard, outline: renderOutline, notebook: renderNotebook }[state.view];
+  const view = { write: renderWrite, board: renderBoard, outline: renderOutline, read: renderRead, notebook: renderNotebook, trash: renderTrash }[state.view] || renderWrite;
   return h('main', { class: `main view-${state.view}` }, view());
 }
 
@@ -1723,20 +1739,22 @@ function renderWrite() {
   );
 
   const ed = h('div', {
-    class: 'editor prose', contentEditable: 'true', spellcheck: true,
+    class: 'editor prose', contentEditable: 'true', spellcheck: prefs.spellcheck,
     'data-placeholder': kids.length ? `Optional opening text for this ${typeLabel}…` : 'Start writing…',
     'aria-label': 'Draft text',
   });
   ed.innerHTML = n.content;
   ed.classList.toggle('fade-rest', prefs.fadeRest);
-  let countTimer;
+  const countTimer = { echo: null };
+  let wcTimer;
   ed.addEventListener('input', () => {
     n.content = /^(\s|<br>|<p><br><\/p>|<div><br><\/div>)*$/.test(ed.innerHTML) ? '' : ed.innerHTML;
     state.session?.touched.add(n.id);
     changed();
+    if (state.drawer?.kind === 'echoes') { clearTimeout(countTimer.echo); countTimer.echo = setTimeout(paintDrawer, 700); }
     followCaret(ed);
-    clearTimeout(countTimer);
-    countTimer = setTimeout(refreshCounts, 250);
+    clearTimeout(wcTimer);
+    wcTimer = setTimeout(refreshCounts, 250);
   });
   ed.addEventListener('paste', (e) => {
     const text = e.clipboardData.getData('text/plain');
@@ -1783,6 +1801,8 @@ function renderWrite() {
       tb('✱', 'Scene break', exec('insertHorizontalRule')),
       h('span', { class: 'tb-sep' }),
       h('button', { class: 'tb wide', title: 'Split this block into two at the cursor', onmousedown: (e) => { e.preventDefault(); splitAtCursor(); } }, icon('split'), 'Split here'),
+      h('button', { class: 'tb wide', title: 'Echoes: repeated words, phrases and crutch words in this block', onmousedown: (e) => e.preventDefault(), onclick: openEchoes }, icon('echo'), 'Echoes'),
+      aiReady() && h('button', { class: 'tb wide', title: 'Polish: select a passage for other ways to say it, or click with nothing selected to line-edit this block (AI)', onmousedown: (e) => e.preventDefault(), onclick: runPolish }, icon('spark'), 'Polish'),
       h('div', { class: 'spacer' }),
       writingToggles(ed),
       h('span', { class: 'tb-sep' }),
@@ -2587,6 +2607,10 @@ function renderAssistant(n) {
       class: 'ai-btn', disabled: res?.loading, title: AI.actions[a].hint,
       onclick: () => runAI(n.id, a, () => AI.actions[a].run(aiSettings(), P(), n.id)),
     }, h('strong', null, AI.actions[a].label), h('span', null, AI.actions[a].hint)))),
+    (isRoot || n.children.length > 0) && h('button', {
+      class: 'ai-btn', onclick: () => runStoryCheck(n.id),
+      title: 'Reads the writing for plot holes, continuity slips, dropped threads and motivation gaps',
+    }, h('strong', null, 'Story check'), h('span', null, `Plot holes, continuity, dropped threads${isRoot ? ' across the book' : ` in this ${M.TYPES[n.type].label.toLowerCase()}`}.`)),
     h('div', { class: 'ask' }, autoGrow(askBox), h('button', { class: 'btn small', disabled: res?.loading, onclick: runAsk }, 'Ask')),
     res && renderAIResult(n, res),
   );
@@ -2662,6 +2686,9 @@ function openSettings({ scrollTo } = {}) {
       h('input', { type: 'range', min: 15, max: 24, value: prefs.fontSize, oninput: (e) => { prefs.fontSize = +e.target.value; savePrefs(); document.documentElement.style.setProperty('--editor-size', `${prefs.fontSize}px`); } })),
     typeControls(),
     h('h3', null, 'Writing'),
+    h('label', { class: 'check' },
+      h('input', { type: 'checkbox', checked: prefs.spellcheck, onchange: (e) => { prefs.spellcheck = e.target.checked; savePrefs(); document.querySelectorAll('.editor').forEach((x) => (x.spellcheck = prefs.spellcheck)); } }),
+      h('span', null, h('strong', null, 'Check spelling as I type'), h('br'), h('span', { class: 'muted small' }, 'Uses your browser’s own dictionary: misspellings get a red underline, and right-click shows suggestions. Works offline.'))),
     h('label', { class: 'check' },
       h('input', { type: 'checkbox', checked: prefs.sounds, onchange: (e) => setWritingPref('sounds', e.target.checked) }),
       h('span', null, h('strong', null, 'Typing sounds'), h('br'), h('span', { class: 'muted small' }, 'Typewriter clacks as you type, and a bell with the carriage return on Enter.'))),
@@ -2905,6 +2932,515 @@ function toggleFocus() {
   if (state.focus && state.view !== 'write') state.view = 'write';
   render();
   if (state.focus) toast('Focus mode. Press Esc to exit.');
+}
+
+// ---- the drawer: Echoes, Polish and Story check results ---------------------------------
+// A panel that slides in from the right and stays put while you write. It lives outside
+// #app, so re-rendering the workspace doesn't close it.
+
+// Keeps the same data object, so async work that started it can fill it in later.
+function openDrawer(kind, data = {}) {
+  state.drawer = Object.assign(data, { kind });
+  paintDrawer();
+}
+
+function closeDrawer() {
+  state.drawer = null;
+  E.clearHighlight();
+  paintDrawer();
+}
+
+function paintDrawer() {
+  let el = document.getElementById('drawer');
+  const d = state.drawer;
+  if (!d || !state.project) { el?.remove(); if (!d) E.clearHighlight(); return; }
+  if (!el) {
+    el = h('aside', { id: 'drawer', class: 'drawer', 'aria-label': 'Tools' });
+    document.body.append(el);
+  }
+  const titles = { echoes: 'Echoes', polish: '✦ Polish', story: '✦ Story check' };
+  const body = { echoes: echoesBody, polish: polishBody, story: storyBody }[d.kind]();
+  el.replaceChildren(
+    h('div', { class: 'drawer-head' }, h('h3', null, titles[d.kind]), h('button', { class: 'icon-btn small', title: 'Close', onclick: closeDrawer }, icon('close'))),
+    h('div', { class: 'drawer-body' }, body));
+}
+
+// ---- Echoes ------------------------------------------------------------------------------
+
+// What Echoes looks at: the open draft, or everything in the Read view.
+function echoesRoots() {
+  if (state.view === 'read') return [...document.querySelectorAll('.read .read-prose')];
+  if (state.view === 'write') return [...document.querySelectorAll('.write .editor')];
+  return [];
+}
+
+function openEchoes() {
+  if (state.drawer?.kind === 'echoes') return closeDrawer();
+  openDrawer('echoes', { term: null, idx: 0 });
+}
+
+function echoesBody() {
+  const d = state.drawer;
+  const roots = echoesRoots();
+  if (!roots.length) return h('p', { class: 'muted' }, 'Open a block in Write, or the Read view, to check its wording.');
+  const a = E.analyze(roots.map((r) => r.innerText).join('\n\n'));
+  if (a.total < 30) return h('p', { class: 'muted' }, 'Write a little more first. Echoes needs a few paragraphs to find patterns.');
+  const pick = (term) => { d.term = d.term === term ? null : term; d.idx = 0; d.scroll = true; paintDrawer(); };
+  const item = (term, label) => h('button', { class: `echo-item ${d.term === term ? 'on' : ''}`, onclick: () => pick(term) },
+    h('span', { class: 'echo-term' }, term), h('span', { class: 'echo-count' }, label));
+  const group = (title, hint, items) => items.length > 0 && h('section', { class: 'echo-group' },
+    h('div', { class: 'eyebrow' }, title), h('p', { class: 'muted small' }, hint), h('div', { class: 'echo-list' }, items));
+
+  let stepper = null;
+  if (d.term) {
+    const ranges = E.highlight(roots, d.term);
+    if (ranges.length) {
+      d.idx = ((d.idx % ranges.length) + ranges.length) % ranges.length;
+      E.highlightCurrent(ranges[d.idx]);
+      if (d.scroll) { ranges[d.idx].startContainer.parentElement?.scrollIntoView({ block: 'center', behavior: 'smooth' }); d.scroll = false; }
+      const step = (n) => { d.idx += n; d.scroll = true; paintDrawer(); };
+      stepper = h('div', { class: 'echo-stepper' },
+        h('span', null, h('b', null, `“${d.term}”`), ` ${d.idx + 1} of ${ranges.length}`),
+        h('button', { class: 'icon-btn small', title: 'Previous', onclick: () => step(-1) }, icon('arrowL')),
+        h('button', { class: 'icon-btn small flip', title: 'Next', onclick: () => step(1) }, icon('arrowL')));
+    }
+  } else E.clearHighlight();
+
+  return [
+    h('p', { class: 'muted small' }, `${fmt(a.total)} words ${state.view === 'read' ? 'in this reading' : 'in this block'}. Click anything to see where it appears.`),
+    !E.canHighlight && h('p', { class: 'muted small' }, 'This browser can’t highlight words in place, so you’ll see counts only.'),
+    stepper,
+    group('Close repeats', 'The same word again within a few lines.', a.echoes.map((x) => item(x.word, `×${x.count}`))),
+    group('Words you lean on', 'Used often for a piece this long.', a.overused.map((x) => item(x.word, `×${x.count}`))),
+    group('Repeated phrases', 'The same few words, more than once.', a.repeated.map((x) => item(x.phrase, `×${x.count}`))),
+    group('Crutch words', 'Often filler, or telling instead of showing. Keep the ones that earn their place.', a.crutch.map((x) => item(x.word, `×${x.count}`))),
+    !a.echoes.length && !a.overused.length && !a.repeated.length && !a.crutch.length && h('p', { class: 'muted' }, 'Nothing stands out. Nice and varied.'),
+    h('button', { class: 'btn small ghost', onclick: () => paintDrawer() }, 'Check again'),
+  ];
+}
+
+// ---- Polish (AI line editing) ------------------------------------------------------------
+
+function runPolish() {
+  const n = sel();
+  const ed = document.querySelector('.write .editor');
+  if (!ed) return;
+  const s = getSelection();
+  const picked = s.rangeCount && ed.contains(s.anchorNode) ? s.toString().trim() : '';
+  if (picked && picked.split(/\s+/).length >= 2) {
+    const r = s.getRangeAt(0);
+    const before = document.createRange();
+    before.setStart(ed, 0);
+    before.setEnd(r.startContainer, r.startOffset);
+    const after = document.createRange();
+    after.setStart(r.endContainer, r.endOffset);
+    after.setEnd(ed, ed.childNodes.length);
+    const d = { mode: 'alt', nodeId: n.id, original: picked, range: r.cloneRange(), loading: true };
+    openDrawer('polish', d);
+    AI.polish.alternatives.run(aiSettings(), P(), n.id, picked, before.toString().slice(-500), after.toString().slice(0, 500))
+      .then((data) => { d.data = data; }, (e) => { d.error = aiError(e); })
+      .finally(() => { d.loading = false; if (state.drawer === d) paintDrawer(); });
+    return;
+  }
+  if (!M.stripHtml(n.content).trim()) return toast('Write something first, or select a passage, then Polish.');
+  const d = { mode: 'edit', nodeId: n.id, loading: true, applied: new Set() };
+  openDrawer('polish', d);
+  AI.polish.lineEdit.run(aiSettings(), P(), n.id)
+    .then((data) => { d.data = data; }, (e) => { d.error = aiError(e); })
+    .finally(() => { d.loading = false; if (state.drawer === d) paintDrawer(); });
+}
+
+// Replace text in the open draft the way typing would, so ⌘Z undoes it.
+function replaceInDraft(nodeId, original, replacement, range) {
+  const ed = document.querySelector('.write .editor');
+  if (!ed || state.selectedId !== nodeId) return 'away';
+  const r = range && ed.contains(range.startContainer) && range.toString().trim() === original ? range : E.findRanges(ed, original)[0];
+  if (!r) return 'missing';
+  ed.focus();
+  const s = getSelection();
+  s.removeAllRanges();
+  s.addRange(r);
+  document.execCommand('insertText', false, replacement);
+  return 'ok';
+}
+
+function polishBody() {
+  const d = state.drawer;
+  const node = P().nodes[d.nodeId];
+  if (d.loading) return h('div', { class: 'ai-result loading' }, h('span', { class: 'spinner' }), d.mode === 'alt' ? 'Trying other ways to say it…' : 'Reading closely…');
+  if (d.error) return h('p', { class: 'error-text' }, d.error);
+  if (!node) return h('p', { class: 'muted' }, 'That block is gone.');
+  const away = state.selectedId !== d.nodeId || state.view !== 'write';
+  const goBack = away && h('button', { class: 'btn small', onclick: () => select(d.nodeId, 'write') }, `Back to “${node.title}” to apply`);
+  const result = (status) => {
+    if (status === 'ok') return true;
+    toast(status === 'missing' ? 'Couldn’t find that exact text any more. It may have changed since.' : 'Open the block to apply this.', { error: status === 'missing' });
+    return false;
+  };
+  if (d.mode === 'alt') {
+    return [
+      h('div', { class: 'eyebrow' }, 'Your words'),
+      h('blockquote', { class: 'polish-orig' }, d.original),
+      goBack,
+      h('div', { class: 'eyebrow' }, 'Other ways to say it'),
+      d.data.options.map((o) => h('div', { class: 'polish-card' },
+        h('p', { class: 'polish-text' }, o.text),
+        h('p', { class: 'muted small' }, o.note),
+        h('button', {
+          class: 'btn small', disabled: away,
+          onclick: () => { if (result(replaceInDraft(d.nodeId, d.original, o.text, d.range))) { toast(`Replaced. ${MOD}Z to undo.`); closeDrawer(); } },
+        }, 'Use this'))),
+      h('p', { class: 'muted small' }, 'Select a different passage and Polish again for more.'),
+    ];
+  }
+  return [
+    h('p', { class: 'polish-overall' }, d.data.overall),
+    goBack,
+    !d.data.edits.length && h('p', { class: 'muted' }, 'Nothing to change. It reads well.'),
+    d.data.edits.map((x, i) => {
+      const done = d.applied.has(i);
+      const show = () => {
+        const ed = document.querySelector('.write .editor');
+        const r = ed && E.findRanges(ed, x.original)[0];
+        if (!r) return toast('Couldn’t find that passage in the open draft.');
+        E.highlightCurrent(r);
+        r.startContainer.parentElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      };
+      return h('div', { class: `polish-card edit ${done ? 'done' : ''}` },
+        h('span', { class: 'chip' }, x.kind),
+        h('p', { class: 'polish-del' }, x.original),
+        h('p', { class: 'polish-ins' }, x.suggestion),
+        h('p', { class: 'muted small' }, x.why),
+        h('div', { class: 'polish-actions' },
+          h('button', { class: 'btn small', disabled: done || away, onclick: () => { if (result(replaceInDraft(d.nodeId, x.original, x.suggestion))) { d.applied.add(i); paintDrawer(); } } }, done ? 'Applied' : 'Apply'),
+          !done && h('button', { class: 'btn small ghost', disabled: away, onclick: show }, 'Show me')));
+    }),
+  ];
+}
+
+// ---- Story check (AI) ------------------------------------------------------------------
+
+async function runStoryCheck(scopeId = 'root') {
+  if (!aiReady()) return openSettings();
+  const words = AI.storyCheckSize(P(), scopeId);
+  const what = scopeId === 'root' ? 'your whole manuscript' : `“${P().nodes[scopeId].title}”`;
+  if (words > 1500 && !confirm(`Story check reads ${what}: about ${fmt(words)} words, sent to Anthropic with your API key. Longer books take a few minutes and cost more. Go ahead?`)) return;
+  const d = { scopeId, loading: true };
+  openDrawer('story', d);
+  try { d.data = await AI.storyCheck.run(aiSettings(), P(), scopeId); } catch (e) { d.error = aiError(e); }
+  d.loading = false;
+  if (state.drawer === d) paintDrawer();
+}
+
+function storyBody() {
+  const d = state.drawer;
+  if (d.loading) return h('div', { class: 'ai-result loading' }, h('span', { class: 'spinner' }), 'Reading the whole thing. This can take a few minutes for a long book…');
+  if (d.error) return h('p', { class: 'error-text' }, d.error);
+  const { summary, issues } = d.data;
+  const order = { high: 0, medium: 1, low: 2 };
+  const linkTo = (id) => P().nodes[id] && h('button', { class: 'chip link-chip', onclick: () => select(id, 'write') }, P().nodes[id].title);
+  return [
+    h('p', { class: 'polish-overall' }, summary),
+    !issues.length && h('p', { class: 'muted' }, 'No problems found in the story’s logic.'),
+    [...issues].sort((a, b) => order[a.severity] - order[b.severity]).map((x) => h('div', { class: `story-card sev-${x.severity}` },
+      h('div', { class: 'story-top' }, h('span', { class: 'sev' }, x.severity), h('span', { class: 'chip' }, x.kind)),
+      h('strong', null, x.title),
+      h('p', null, x.detail),
+      h('p', { class: 'muted small' }, h('b', null, 'Try: '), x.suggestion),
+      h('div', { class: 'story-links' }, x.ids.map(linkTo),
+        h('button', { class: 'link', onclick: (e) => { newNote(`Story check · ${x.title}\n${x.detail}\nTry: ${x.suggestion}`, { nodeId: x.ids[0] || null }); e.currentTarget.replaceWith(h('span', { class: 'muted small' }, 'Saved to notebook')); } }, 'Save to notebook')))),
+    h('p', { class: 'muted small' }, 'The assistant can miss things and occasionally flag something that’s fine. Trust your own read.'),
+  ];
+}
+
+// ---- Read view ------------------------------------------------------------------------------
+// The book as continuous pages. Double-click any paragraph to edit it right there.
+
+function readScope() {
+  return P().nodes[state.readScope] ? state.readScope : 'root';
+}
+
+function renderRead() {
+  const p = P();
+  const scope = readScope();
+  const list = scope === 'root' ? M.flatten(p) : [{ node: p.nodes[scope], depth: 0 }, ...M.flatten(p, scope, 1)];
+  const words = M.treeWords(p, scope);
+  const toggle = (key, label) => h('label', { class: 'check small' },
+    h('input', { type: 'checkbox', checked: prefs[key], onchange: (e) => { prefs[key] = e.target.checked; savePrefs(); render(); } }), label);
+  const blocks = [];
+  let prevScene = false;
+  for (const { node } of list) {
+    const lvl = { part: 1, chapter: 2 }[node.type] || 3;
+    const showTitle = lvl < 3 || prefs.readTitles;
+    const head = showTitle ? h(`h${lvl + 1}`, { class: `read-h read-h${lvl}` }, node.title)
+      : prevScene && node.content ? h('p', { class: 'read-break', 'aria-hidden': 'true' }, '✱ ✱ ✱') : null;
+    if (lvl < 3) prevScene = false;
+    const empty = !node.content && !node.children.length;
+    const body = node.content ? h('div', { class: 'read-prose prose', html: node.content })
+      : empty && prefs.readGaps ? h('p', { class: 'read-gap' }, `${node.title}: not written yet`, node.synopsis && ` · ${node.synopsis}`) : null;
+    if (node.content && lvl === 3) prevScene = true;
+    if (!head && !body) continue;
+    blocks.push(h('section', { class: `read-block read-l${lvl}`, 'data-id': node.id }, head, body,
+      h('button', { class: 'read-edit icon-btn small', title: `Edit “${node.title}”`, onclick: () => select(node.id, 'write') }, icon('pen'))));
+  }
+  const page = h('div', { class: 'read-page' }, blocks.length ? blocks : h('p', { class: 'empty' }, 'Nothing written here yet.'));
+  page.addEventListener('dblclick', (e) => {
+    const prose = e.target.closest('.read-prose');
+    if (!prose) return;
+    let el = e.target;
+    while (el && el.parentElement !== prose) el = el.parentElement;
+    jumpTo(prose.closest('.read-block').dataset.id, [...prose.children].indexOf(el));
+  });
+  const scopes = M.flatten(p).filter(({ node }) => node.children.length);
+  return h('div', { class: 'read' },
+    h('div', { class: 'read-bar' },
+      h('select', { class: 'read-scope', 'aria-label': 'What to read', onchange: (e) => { state.readScope = e.target.value; render(); } },
+        h('option', { value: 'root', selected: scope === 'root' }, `The whole book`),
+        scopes.map(({ node, depth }) => h('option', { value: node.id, selected: scope === node.id }, `${' '.repeat(depth + 1)}${node.title}`))),
+      h('span', { class: 'muted small' }, `${fmt(words)} words · about ${Math.max(1, Math.round(words / 250))} min`),
+      h('span', { class: 'spacer' }),
+      toggle('readTitles', 'Section titles'),
+      toggle('readGaps', 'Show gaps'),
+      h('button', { class: 'btn small ghost', onclick: openEchoes }, icon('echo'), 'Echoes'),
+      aiReady() && h('button', { class: 'btn small ghost', onclick: () => runStoryCheck(scope) }, icon('spark'), 'Story check')),
+    h('div', { class: 'read-title' },
+      h('div', { class: 'eyebrow' }, scope === 'root' ? (p.author || 'Read-through') : M.TYPES[p.nodes[scope].type].label),
+      h('h1', null, p.nodes[scope].title)),
+    page,
+    h('p', { class: 'read-hint muted small' }, 'Double-click any paragraph to edit it right there.'));
+}
+
+// Open a block in Write with the cursor at the start of one of its paragraphs.
+function jumpTo(id, index) {
+  select(id, 'write');
+  requestAnimationFrame(() => {
+    const ed = document.querySelector('.write .editor');
+    const el = ed?.children[Math.max(0, index)];
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    ed.focus();
+    const r = document.createRange();
+    r.setStart(el, 0);
+    r.collapse(true);
+    getSelection().removeAllRanges();
+    getSelection().addRange(r);
+    const all = document.createRange();
+    all.selectNodeContents(el);
+    E.highlightCurrent(all);
+    setTimeout(() => { if (!state.drawer) E.clearHighlight(); }, 1400);
+  });
+}
+
+// ---- Trash view ----------------------------------------------------------------------------
+
+function renderTrash() {
+  const p = P();
+  const restore = (e) => {
+    snapshot();
+    const n = M.restoreTrash(p, e.id);
+    changed();
+    render();
+    const parent = n && M.parentOf(p, n.id);
+    toast(`Restored “${n.title}”${parent && parent.id !== 'root' ? ` to “${parent.title}”` : ''}.`, { undo: true });
+  };
+  const forget = (e) => {
+    if (!confirm(`Delete “${e.nodes[e.rootId].title}” for good? This can’t be undone once you leave this page.`)) return;
+    snapshot();
+    p.trash = p.trash.filter((x) => x !== e);
+    changed();
+    render();
+    toast('Deleted for good.', { undo: true });
+  };
+  return h('div', { class: 'board trash' },
+    h('div', { class: 'board-head' },
+      h('h2', null, 'Trash'),
+      h('p', { class: 'muted' }, 'Deleted parts, chapters and sections wait here until you restore them or delete them for good. They’re kept in your project file, and they don’t count toward word totals or exports.'),
+      p.trash.length > 0 && h('button', { class: 'btn small danger-ghost', onclick: () => {
+        if (!confirm(`Empty the Trash? ${p.trash.length} item${p.trash.length > 1 ? 's' : ''} will be deleted for good.`)) return;
+        snapshot(); p.trash = []; changed(); render(); toast('Trash emptied.', { undo: true });
+      } }, icon('trash'), 'Empty trash')),
+    !p.trash.length && h('p', { class: 'empty' }, 'Nothing in the Trash.'),
+    h('div', { class: 'trash-list' }, p.trash.map((e) => {
+      const n = e.nodes[e.rootId];
+      const inside = Object.keys(e.nodes).length - 1;
+      const was = p.nodes[e.parentId];
+      const preview = M.stripHtml(n.content).trim().split(/\s+/).slice(0, 40).join(' ');
+      return h('article', { class: 'trash-item' },
+        h('div', { class: 'trash-top' },
+          h('span', { class: `type-badge type-${n.type}` }, M.TYPES[n.type].label),
+          h('strong', null, n.title)),
+        h('p', { class: 'muted small' }, [
+          `Deleted ${ago(Date.parse(e.deletedAt))}`,
+          `${fmt(M.trashWords(e))} words`,
+          inside && `${inside} block${inside > 1 ? 's' : ''} inside`,
+          was ? (e.parentId === 'root' ? 'was at the top level' : `was in “${was.title}”`) : 'its old place is gone',
+        ].filter(Boolean).join(' · ')),
+        n.synopsis && h('p', { class: 'trash-syn' }, n.synopsis),
+        preview && h('p', { class: 'trash-preview' }, `${preview}…`),
+        h('div', { class: 'trash-actions' },
+          h('button', { class: 'btn small primary', onclick: () => restore(e) }, 'Restore'),
+          h('button', { class: 'btn small danger-ghost', onclick: () => forget(e) }, 'Delete for good')));
+    })));
+}
+
+// ---- Import --------------------------------------------------------------------------------
+
+function openImport() {
+  const dlg = h('dialog', { class: 'settings import' });
+  let parsed = null;  // { items, title, name }
+  let tree = null;
+  const file = h('input', { type: 'file', accept: I.ACCEPT, hidden: true });
+  const body = h('div', { class: 'import-body' });
+  const status = h('p', { class: 'muted small import-status' });
+  let busy = false;
+  const close = () => { if (!busy) dlg.close(); };
+
+  const pickStep = () => {
+    const drop = h('button', { class: 'import-drop', onclick: () => file.click() },
+      icon('import'), h('strong', null, 'Choose a file, or drop it here'),
+      h('span', { class: 'muted small' }, 'Word (.docx), Markdown (.md), plain text (.txt) or a web page (.html)'));
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) read(e.dataTransfer.files[0]); });
+    body.replaceChildren(
+      h('p', null, 'Bring in a manuscript you’ve already started. Chapter headings become chapters, and scene breaks (like *** or #) become sections. Your file isn’t changed.'),
+      drop);
+  };
+
+  const read = async (f) => {
+    status.textContent = 'Reading…';
+    try {
+      const r = await I.readFile(f);
+      parsed = { ...r, name: f.name.replace(/\.[^.]+$/, '') };
+      tree = I.shape(r.items);
+      reviewStep();
+    } catch (e) {
+      status.textContent = '';
+      toast(e.message, { error: true });
+    }
+  };
+  file.addEventListener('change', () => file.files[0] && read(file.files[0]));
+
+  const reviewStep = () => {
+    const st = I.stats(tree);
+    const flat = !st.parts && st.chapters <= 1;
+    const titleIn = h('input', { value: parsed.title || parsed.name, 'aria-label': 'Title' });
+    const aiStructure = h('input', { type: 'checkbox', checked: flat });
+    const aiDescribe = h('input', { type: 'checkbox', checked: true });
+    const where = h('select', null,
+      h('option', { value: 'new' }, 'As a new project'),
+      state.project && h('option', { value: 'append' }, `Added to the end of “${P().nodes.root.title}”`));
+    const outlineRows = [];
+    const walk = (list, depth) => list.forEach((b) => {
+      if (outlineRows.length < 80) outlineRows.push(h('li', { style: `--depth:${depth}` }, h('span', { class: `dot type-${b.type}` }), b.title, h('span', { class: 'muted small' }, ` ${fmt(I.stats([{ ...b, children: [] }]).words)} w`)));
+      walk(b.children, depth + 1);
+    });
+    walk(tree, 0);
+    body.replaceChildren(
+      h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Title'), titleIn),
+      h('p', { class: 'import-stats' }, [st.parts && `${st.parts} parts`, `${st.chapters} chapter${st.chapters === 1 ? '' : 's'}`, st.sections && `${st.sections} sections`, `${fmt(st.words)} words`].filter(Boolean).join(' · ')),
+      flat && h('p', { class: 'muted small' }, 'No chapter headings were found, so it all landed in one chapter.' + (aiReady() ? ' The assistant can find the chapters and scenes for you.' : ' Turn on the assistant in Settings and it can find the chapters and scenes for you.')),
+      h('ul', { class: 'import-outline' }, outlineRows),
+      aiReady()
+        ? h('div', { class: 'import-ai' },
+          h('div', { class: 'eyebrow' }, icon('spark'), ' With the assistant'),
+          h('label', { class: 'check' }, aiStructure, h('span', null, 'Find the chapters and scenes', h('br'), h('span', { class: 'muted small' }, 'Reads the opening of every paragraph and decides where chapters and scenes begin.'))),
+          h('label', { class: 'check' }, aiDescribe, h('span', null, 'Write a title, synopsis and purpose for each block', h('br'), h('span', { class: 'muted small' }, 'So the outline and board are useful straight away.'))),
+          h('p', { class: 'muted small' }, `Sends the text (about ${fmt(st.words)} words) to Anthropic with your API key. A long book takes a few minutes.`))
+        : h('p', { class: 'muted small' }, 'Tip: with the assistant on (Settings), it can also find chapters and write a synopsis for every block as it imports.'),
+      h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Bring it in'), where),
+      h('div', { class: 'dlg-foot' },
+        h('button', { class: 'btn ghost', onclick: pickStep }, 'Choose another file'),
+        h('button', { class: 'btn primary', onclick: () => go({ title: titleIn.value.trim() || parsed.name, structure: aiReady() && aiStructure.checked, describe: aiReady() && aiDescribe.checked, where: where.value }) }, 'Import')));
+  };
+
+  const go = async (o) => {
+    if (o.where === 'new' && state.project && !confirmDiscard()) return;
+    busy = true;
+    body.querySelectorAll('button, input, select').forEach((x) => (x.disabled = true));
+    try {
+      if (o.structure) {
+        status.textContent = 'Finding the chapters and scenes…';
+        const paras = I.paragraphsOf(parsed.items);
+        const { blocks } = await AI.importAI.structure.run(aiSettings(), paras.map((x) => x.text));
+        tree = I.shapeFromStarts(paras, blocks);
+      }
+      if (o.describe) {
+        const all = [];
+        const walk = (list) => list.forEach((b) => { all.push(b); walk(b.children); });
+        walk(tree);
+        const BATCH = 12;
+        for (let i = 0; i < all.length; i += BATCH) {
+          status.textContent = `Writing synopses: ${Math.min(i + BATCH, all.length)} of ${all.length} blocks…`;
+          const batch = all.slice(i, i + BATCH).map((b, k) => ({ ref: `B${i + k + 1}`, type: b.type, title: b.title, text: I.plainOf(b.html) || b.children.map((c) => c.title).join(', ') }));
+          const { blocks } = await AI.importAI.describe.run(aiSettings(), o.title, batch);
+          for (const r of blocks) {
+            const b = all[+r.ref.replace(/\D/g, '') - 1];
+            if (b) Object.assign(b, { title: r.title || b.title, synopsis: r.synopsis, purpose: r.purpose });
+          }
+        }
+      }
+    } catch (e) {
+      busy = false;
+      status.textContent = '';
+      toast(`The assistant step didn’t finish: ${aiError(e)} Importing without it.`, { error: true });
+    }
+    busy = false;
+    status.textContent = '';
+    finishImport(tree, o);
+    dlg.close();
+  };
+
+  dlg.append(
+    h('div', { class: 'dlg-head' }, h('h2', null, 'Import a manuscript'), h('button', { class: 'icon-btn', onclick: close, title: 'Close' }, icon('close'))),
+    body, status, file);
+  dlg.addEventListener('cancel', (e) => { if (busy) e.preventDefault(); });
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  pickStep();
+  dlg.showModal();
+}
+
+function addTree(p, parentId, list) {
+  for (const b of list) {
+    const n = M.addNode(p, parentId, b.type, null, b.title);
+    n.content = b.html || '';
+    n.synopsis = b.synopsis || '';
+    n.purpose = b.purpose || '';
+    n.status = n.content ? 'drafting' : 'idea';
+    addTree(p, n.id, b.children);
+  }
+}
+
+async function finishImport(tree, o) {
+  const words = I.stats(tree).words;
+  if (o.where === 'append' && state.project) {
+    snapshot();
+    addTree(P(), 'root', tree);
+    changed();
+    render();
+    toast(`Imported ${fmt(words)} words into “${P().nodes.root.title}”.`, { undo: true });
+    return;
+  }
+  const p = M.newProject(o.title, 'blank');
+  p.nodes = { root: p.nodes.root };
+  p.nodes.root.children = [];
+  p.targetWords = Math.max(p.targetWords, Math.ceil((words * 1.1) / 10000) * 10000);
+  addTree(p, 'root', tree);
+  state.project = p;
+  state.handle = null;
+  state.fileName = null;
+  state.fileStamp = null;
+  state.conflict = false;
+  state.undo = [];
+  state.aiResults = {};
+  state.selectedId = 'root';
+  state.view = 'outline';
+  state.dirty = true;
+  startSession();
+  render();
+  toast(`Imported ${fmt(words)} words. Have a look at the outline.`);
+  if (S.canAutosave) await saveAs();
 }
 
 // ---- global keys & lifecycle ------------------------------------------------------------

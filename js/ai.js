@@ -82,15 +82,16 @@ function context(p, id) {
 
 // ---- calls ----------------------------------------------------------------
 
-async function call(settings, prompt, { schema } = {}) {
+// long: the prompt carries a lot of manuscript, so stream (no request timeouts) and allow a long answer.
+async function call(settings, prompt, { schema, long = false, system = SYSTEM } = {}) {
   const c = await client(settings.apiKey);
   const isOpus = settings.model === 'claude-opus-5';
   const req = {
     model: settings.model,
-    max_tokens: 16000,
+    max_tokens: long ? 64000 : 16000,
     thinking: { type: 'adaptive' },
     output_config: { effort: 'medium', ...(schema && { format: { type: 'json_schema', schema } }) },
-    system: SYSTEM,
+    system,
     messages: [{ role: 'user', content: prompt }],
   };
   if (isOpus) {
@@ -99,7 +100,7 @@ async function call(settings, prompt, { schema } = {}) {
     req.betas = ['server-side-fallback-2026-07-01'];
     req.fallbacks = 'default';
   }
-  const res = await c.beta.messages.create(req);
+  const res = long ? await c.beta.messages.stream(req).finalMessage() : await c.beta.messages.create(req);
   if (res.stop_reason === 'refusal') {
     throw new Error("The assistant declined this request. Try rephrasing or narrowing what you're asking.");
   }
@@ -319,6 +320,227 @@ ${note.text}
 """
 
 Riff on this note. Give 5 distinct variations that push it somewhere new: for example invert it, raise the stakes, zoom into one concrete detail, connect it to something already in the outline, or move it to a different point in the book. Each is one or two sentences, specific and concrete, not prose for the book. Return JSON.`, { schema: this.schema });
+    },
+  },
+};
+
+// ---- line editing ----------------------------------------------------------------
+// The writer asks for these explicitly, on text they choose. Suggestions are always
+// offered side by side with the original, and nothing changes until they click Apply.
+
+const LINE_EDITOR = `You are a sharp, sympathetic line editor working with a writer on their own manuscript. You suggest wording; the writer decides. Preserve their voice, point of view, tense, register and meaning. Prefer precise, concrete, surprising-but-earned language over ornate language. Never pad. When the original is already good, say so rather than inventing changes.`;
+
+export const polish = {
+  alternatives: {
+    schema: {
+      type: 'object',
+      properties: {
+        options: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              text: { type: 'string', description: 'The replacement wording, ready to drop in.' },
+              note: { type: 'string', description: 'A few words on what this version does differently.' },
+            },
+            required: ['text', 'note'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['options'],
+      additionalProperties: false,
+    },
+    run(s, p, id, passage, before, after) {
+      const n = p.nodes[id];
+      return call(s, `${bookHeader(p)}
+
+From the ${TYPES[n.type].label.toLowerCase()} "${n.title}"${n.synopsis ? ` (${n.synopsis})` : ''}.
+
+Text just before the passage:
+"""${before}"""
+
+THE PASSAGE:
+"""${passage}"""
+
+Text just after:
+"""${after}"""
+
+Offer 4 alternative wordings for THE PASSAGE only, so it fits seamlessly between the surrounding text. Range from a light tightening, to a more vivid or concrete version, to a bolder, more surprising one. Keep roughly the same length unless cutting improves it. Return JSON.`, { schema: this.schema, system: LINE_EDITOR });
+    },
+  },
+  lineEdit: {
+    schema: {
+      type: 'object',
+      properties: {
+        overall: { type: 'string', description: 'One or two sentences on the prose as a whole.' },
+        edits: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              original: { type: 'string', description: 'An exact, verbatim excerpt from the draft (a phrase or sentence) to replace.' },
+              suggestion: { type: 'string', description: 'The replacement text.' },
+              why: { type: 'string', description: 'A brief reason.' },
+              kind: { type: 'string', enum: ['clarity', 'vividness', 'rhythm', 'cliché', 'redundancy', 'word choice', 'dialogue', 'other'] },
+            },
+            required: ['original', 'suggestion', 'why', 'kind'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['overall', 'edits'],
+      additionalProperties: false,
+    },
+    run(s, p, id) {
+      const n = p.nodes[id];
+      return call(s, `${bookHeader(p)}
+
+${describe(n)}
+
+Line-edit this draft. Pick the 6–12 phrases or sentences where a change would make the biggest difference: flat or vague wording, clichés, tangled sentences, repetition, weak verbs, rhythm problems, stiff dialogue. For each, quote the original EXACTLY as it appears in the draft (verbatim, so it can be found and replaced), give your suggested replacement, and a brief reason. Don't touch what already works. Return JSON.`, { schema: this.schema, system: LINE_EDITOR, long: stripHtml(n.content).length > 30000 });
+    },
+  },
+};
+
+// ---- story check ----------------------------------------------------------------------
+
+export const STORY_ISSUES = ['plot hole', 'continuity', 'dropped thread', 'motivation', 'timeline', 'setup without payoff', 'pacing', 'other'];
+
+// The manuscript for a scope, each block labelled with a short ref (B1, B2…) that the
+// model can cite and the app can turn back into links.
+function manuscript(p, scopeId) {
+  const refs = {};
+  const list = scopeId === 'root' ? flatten(p) : [{ node: p.nodes[scopeId], depth: 0 }, ...flatten(p, scopeId, 1)];
+  const parts = list.map(({ node, depth }, i) => {
+    const ref = `B${i + 1}`;
+    refs[ref] = node.id;
+    const text = stripHtml(node.content).trim();
+    return [
+      `${'#'.repeat(Math.min(depth + 1, 4))} [${ref}] ${TYPES[node.type].label}: ${node.title} (status: ${node.status})`,
+      node.synopsis && `What happens: ${node.synopsis}`,
+      node.purpose && `Why it's here: ${node.purpose}`,
+      text || '(not written yet)',
+    ].filter(Boolean).join('\n');
+  });
+  return { text: parts.join('\n\n'), refs };
+}
+
+// Roughly how many words a story check would send.
+export function storyCheckSize(p, scopeId) {
+  return (manuscript(p, scopeId).text.match(/\S+/g) || []).length;
+}
+
+export const storyCheck = {
+  schema: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string', description: 'Two or three sentences: the overall state of the story logic.' },
+      issues: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', enum: STORY_ISSUES },
+            severity: { type: 'string', enum: ['high', 'medium', 'low'] },
+            title: { type: 'string', description: 'A short headline for the issue.' },
+            detail: { type: 'string', description: 'What the problem is, citing specifics from the text.' },
+            suggestion: { type: 'string', description: 'One concrete way to fix it.' },
+            refs: { type: 'array', items: { type: 'string' }, description: 'Block refs like "B3" where the issue shows up.' },
+          },
+          required: ['kind', 'severity', 'title', 'detail', 'suggestion', 'refs'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['summary', 'issues'],
+    additionalProperties: false,
+  },
+  async run(s, p, scopeId) {
+    const { text, refs } = manuscript(p, scopeId);
+    const out = await call(s, `${bookHeader(p)}
+
+The manuscript${scopeId === 'root' ? '' : ` (just "${p.nodes[scopeId].title}")`}, block by block. Each block has a ref in [brackets]. Unwritten blocks show only their plan.
+
+${text}
+
+Read this as a story editor checking the logic of the story. Find real problems a careful reader would notice: plot holes, continuity errors (names, ages, places, objects, who knows what), timeline contradictions, characters acting without believable motivation, threads or setups that are dropped or never paid off, and serious pacing problems. Consider the planned (unwritten) blocks too: say when a plan doesn't resolve something. Be specific and cite blocks by ref. Order by importance. Leave out matters of taste. If the story logic is sound, say so and return few or no issues. Return JSON.`, { schema: this.schema, long: true });
+    out.issues = out.issues.map((it) => ({ ...it, ids: it.refs.map((r) => refs[r.replace(/[^\w]/g, '')]).filter(Boolean) }));
+    return out;
+  },
+};
+
+// ---- import ---------------------------------------------------------------------------
+
+export const importAI = {
+  // Find parts, chapters and scenes in text that has no headings to go by.
+  structure: {
+    schema: {
+      type: 'object',
+      properties: {
+        blocks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', enum: ['part', 'chapter', 'section'] },
+              title: { type: 'string' },
+              start: { type: 'integer', description: 'Number of the paragraph this block starts at.' },
+            },
+            required: ['type', 'title', 'start'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['blocks'],
+      additionalProperties: false,
+    },
+    run(s, paragraphs) {
+      const listing = paragraphs.map((t, i) => {
+        const words = t.split(/\s+/);
+        return `${i + 1}. ${words.slice(0, 14).join(' ')}${words.length > 14 ? ` … (${words.length} words)` : ''}`;
+      }).join('\n');
+      return call(s, `Here is a manuscript as a numbered list of paragraphs (each shows its opening words and length):
+
+${listing}
+
+Divide it into parts (only if the manuscript clearly has them), chapters and sections (scenes). Start a new chapter where the text shifts to a new chapter-sized movement (a new time, place, or thread), and sections at scene changes within chapters. Give each block a short working title drawn from its content. The first block must start at paragraph 1, and starts must increase. Return JSON.`, { schema: this.schema, long: true });
+    },
+  },
+  // Titles, synopses and purposes for imported blocks, a batch at a time.
+  describe: {
+    schema: {
+      type: 'object',
+      properties: {
+        blocks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              ref: { type: 'string' },
+              title: { type: 'string', description: 'A short working title (keep the existing one if it is meaningful).' },
+              synopsis: { type: 'string', description: 'One or two sentences: what happens.' },
+              purpose: { type: 'string', description: 'One sentence: why this block matters to the whole.' },
+            },
+            required: ['ref', 'title', 'synopsis', 'purpose'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['blocks'],
+      additionalProperties: false,
+    },
+    run(s, bookTitle, batch) {
+      const body = batch.map((b) => {
+        const words = b.text.split(/\s+/);
+        const excerpt = words.length > 700 ? `${words.slice(0, 550).join(' ')}\n[…]\n${words.slice(-150).join(' ')}` : b.text;
+        return `[${b.ref}] ${b.type}: ${b.title}\n"""\n${excerpt || '(no text)'}\n"""`;
+      }).join('\n\n');
+      return call(s, `These blocks were just imported from the manuscript "${bookTitle}". For each, write a short working title (keep the existing title if it's meaningful, such as a real chapter name), a one- or two-sentence synopsis, and a one-sentence purpose. Match the author's vocabulary.
+
+${body}
+
+Return JSON with one entry per ref.`, { schema: this.schema, long: true });
     },
   },
 };

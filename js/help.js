@@ -44,7 +44,7 @@ export const SECTIONS = [
   <li><strong>More actions</strong>: right-click any block (or click its <strong>⋯</strong>) to rename, add, <em>Turn into</em> a part, chapter or section, <em>Move to</em> somewhere else, change its status, move it up or down, merge or delete. The same menu is on board cards, rows in the Outline view, and the ⋯ beside a block’s title.</li>
   <li><strong>Select several</strong>: ${k(mod)}-click to pick blocks one by one, or ${k('Shift')}-click for a range. Then drag them together, or use the bar at the bottom of the outline to act on them all.</li>
   <li><strong>Move</strong> by dragging. A line shows exactly where the block will land and what it will sit in. Drop in the middle of a block to put it inside. At the end of a branch, slide left or right to choose the level (after the section, or after the whole chapter). Hover over a closed block to open it.</li>
-  <li><strong>Delete</strong>: select a block and press ${k('Delete')}, or use the menu. Anything with writing in it asks first, and <em>Undo</em> appears in the message at the bottom.</li>
+  <li><strong>Delete</strong>: select a block and press ${k('Delete')}, or use the menu. Deleted blocks go to the <strong>Trash</strong> (at the bottom of the outline, or <em>File → Trash</em>), so nothing is lost: restore them to where they were, or delete them for good. Trashed blocks don’t count toward word totals or exports.</li>
   <li><strong>Split</strong> a block in two at the cursor with <em>Split here</em> on the writing toolbar.</li>
   <li><strong>Find</strong> anything with the search box above the outline. It searches titles, synopses, notes, tags and text.</li>
   <li>The coloured dot is the block’s <strong>status</strong>: idea, outlined, drafting, revising, done. The number is its word count, including everything inside it.</li>
@@ -55,6 +55,7 @@ export const SECTIONS = [
 <ul>
   <li><strong>Write</strong>: the editor for the selected block, with its direction, where it sits, and its neighbours above it. Select the book itself to see the overview: premise, word target, and progress by status.</li>
   <li><strong>Board</strong>: the pieces of a part or chapter as index cards. Drag to reorder; edit titles and synopses on the cards. <em>Up a level</em> zooms out.</li>
+  <li><strong>Read</strong>: the whole book (or one part or chapter) as continuous pages, the way a reader will meet it. Double-click any paragraph to jump straight to it in the editor. Turn on <em>Show gaps</em> to see what’s still unwritten.</li>
   <li><strong>Outline</strong>: the whole book as a table. Read down <em>What happens</em> to check the story holds together; read down <em>Why it’s here</em> to check every piece earns its place. Filter to parts or chapters only.</li>
   <li><strong>Notebook</strong>: ideas that don’t have a home yet, as a grid or a free-form canvas. See <em>Brainstorming</em>.</li>
 </ul>` },
@@ -65,6 +66,11 @@ export const SECTIONS = [
   <li><strong>Formatting</strong>: bold, italic, headings, quotes, lists and scene breaks (✱) from the toolbar. Pasted text arrives as plain paragraphs.</li>
   <li><strong>Focus mode</strong> (${k(mod, '.')}) hides everything but the page. ${k('Esc')} to leave.</li>
   <li><strong>Word targets</strong>: set one per block in the right panel, and one for the whole book on its overview.</li>
+</ul>
+<h3>Spelling and repetition</h3>
+<ul>
+  <li><strong>Spell check</strong> uses your browser’s own dictionary: misspellings get a red underline, and right-click shows suggestions. It works offline. Turn it off in Settings.</li>
+  <li><strong>Echoes</strong> (on the writing toolbar, and in the Read view) finds words repeated close together, words you lean on, repeated phrases and crutch words like <em>just</em>, <em>really</em> and <em>suddenly</em>. Click one to highlight every occurrence and step through them. It runs on your computer, no AI needed.</li>
 </ul>
 <h3>Writing aids</h3>
 <p>Three buttons on the writing toolbar, next to the word count. Flip them any time; they’re also in Settings.</p>
@@ -113,6 +119,7 @@ export const SECTIONS = [
   <li><strong>Your shelf</strong>: projects you’ve opened appear as books on the welcome screen (Chrome and friends). Click one to pick up where you left off; the browser asks permission first. Hover and click × to take one off the shelf; the file itself isn’t touched. The shelf only remembers where your files are and their titles and word counts, never what’s in them.</li>
   <li><strong>Two devices</strong>: if the file changes somewhere else while it’s open here, Writers Blocks won’t overwrite it. With nothing unsaved, it loads the new version. Otherwise it asks what you’d like to do.</li>
   <li><strong>Backups</strong>: <em>File → Download a backup copy</em> now and then, or keep the file in a synced or versioned folder.</li>
+  <li><strong>Import</strong> a manuscript you’ve already started (<em>File → Import a manuscript…</em>, or on the welcome screen): Word (.docx), Markdown, plain text or a web page. Headings like “Part One” and “Chapter 3” become parts and chapters, and scene breaks (*** or #) become sections. Bring it in as a new project or add it to the end of this one.</li>
   <li><strong>Export</strong> a manuscript, working draft, outline or progress snapshot as PDF, Word, Markdown, text or a web page. See <em>Exporting, printing and sharing</em>.</li>
   <li><strong>Offline</strong>: after your first visit the app works with no connection, including autosave. In Chrome or Edge you can install it (the install icon in the address bar) to get its own window.</li>
 </ul>` },
@@ -139,6 +146,9 @@ export const SECTIONS = [
   <li>On a block: <em>Where is this going?</em>, <em>Check the flow</em>, <em>Draft a synopsis &amp; purpose</em>, <em>Break it into smaller pieces</em>, or ask anything.</li>
   <li>On the book: <em>Review the structure</em> for pacing, gaps and loose threads.</li>
   <li>In Brainstorm: <em>What if…?</em>, <em>Interview me</em>, and <em>Riff</em> on any note.</li>
+  <li><strong>Polish</strong> (writing toolbar): select a passage for four other ways to say it, or click with nothing selected to have the block line-edited, sentence by sentence. Each suggestion sits beside your original, and nothing changes until you click <em>Apply</em> (${k(mod, 'Z')} undoes it).</li>
+  <li><strong>Story check</strong> (on the book, a part or a chapter, and in the Read view): reads the writing for plot holes, continuity slips, timeline problems, motivation gaps and threads that never pay off, with links to the blocks involved. Save any issue to your notebook.</li>
+  <li><strong>Import</strong>: when bringing in a manuscript, it can find the chapters and scenes and write a synopsis for every block.</li>
   <li>Your text goes straight from your browser to Anthropic, only when you click an action. It needs an internet connection.</li>
 </ul>` },
   {

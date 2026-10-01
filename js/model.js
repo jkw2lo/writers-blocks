@@ -153,6 +153,7 @@ export function newProject(title = 'Untitled Book', shape = 'blank') {
     nodes,
     notebook: [],
     links: [],
+    trash: [],
   };
 }
 
@@ -181,6 +182,7 @@ export function validate(p) {
   }
   p.notebook ||= [];
   p.links ||= [];
+  p.trash ||= [];
   p.notebook.forEach((n, i) => {
     n.color ||= ['yellow', 'peach', 'green'][i % 3];
     n.nodeId ??= null;
@@ -274,6 +276,49 @@ export function deleteNode(p, id) {
 }
 
 /** Split a block's text into two blocks; the second becomes the next sibling. */
+// ---- trash -------------------------------------------------------------------
+// Deleting moves a block (and everything inside it) out of the tree into p.trash,
+// remembering where it was, so it can be restored. Its words leave the totals and
+// it's left out of exports until it comes back.
+
+export function trashNode(p, id) {
+  if (id === 'root' || !p.nodes[id]) return null;
+  const parent = parentOf(p, id);
+  const index = parent.children.indexOf(id);
+  parent.children.splice(index, 1);
+  const nodes = {};
+  const take = (nid) => {
+    const n = p.nodes[nid];
+    if (!n) return;
+    nodes[nid] = n;
+    delete p.nodes[nid];
+    n.children.forEach(take);
+  };
+  take(id);
+  const notes = p.notebook.filter((note) => nodes[note.nodeId]).map((note) => { const link = [note.id, note.nodeId]; note.nodeId = null; return link; });
+  const entry = { id: uid(), rootId: id, parentId: parent.id, index, deletedAt: now(), nodes, notes };
+  p.trash.unshift(entry);
+  return entry;
+}
+
+// Put a trashed block back where it was (or at the end of the book if its old home is gone).
+export function restoreTrash(p, entryId) {
+  const i = p.trash.findIndex((e) => e.id === entryId);
+  if (i < 0) return null;
+  const [e] = p.trash.splice(i, 1);
+  Object.assign(p.nodes, e.nodes);
+  const parent = p.nodes[e.parentId] || p.nodes.root;
+  parent.children.splice(parent === p.nodes[e.parentId] ? Math.min(e.index, parent.children.length) : parent.children.length, 0, e.rootId);
+  parent.collapsed = false;
+  for (const [noteId, nodeId] of e.notes || []) {
+    const note = p.notebook.find((x) => x.id === noteId);
+    if (note && !note.nodeId) note.nodeId = nodeId;
+  }
+  return p.nodes[e.rootId];
+}
+
+export const trashWords = (e) => Object.values(e.nodes).reduce((sum, n) => sum + nodeWords(n), 0);
+
 export function splitNode(p, id, beforeHtml, afterHtml) {
   const node = p.nodes[id];
   node.content = beforeHtml;
