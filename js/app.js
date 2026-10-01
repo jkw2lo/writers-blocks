@@ -3696,7 +3696,9 @@ function mapCard(id) {
   },
   h('div', { class: 'map-card-top' },
     isRoot ? icon('book', 'map-book') : h('span', { class: `dot status-${n.status}`, title: n.status }),
-    h('span', { class: 'map-title', title: 'Double-click to rename' }, n.title),
+    h('span', { class: 'map-title', title: 'Double-click to rename' }, n.title)),
+  // Rename and delete float over the corner on hover, so the text never reflows.
+  h('span', { class: 'map-tools' },
     h('button', { class: 'map-rename-btn', tabindex: -1, title: 'Rename (F2)', 'aria-label': `Rename ${n.title}`, onclick: (e) => { e.stopPropagation(); startMapRename(it.id); } }, icon('pen')),
     !isRoot && h('button', { class: 'map-rename-btn map-del-btn', tabindex: -1, title: 'Move to the Trash (Delete)', 'aria-label': `Delete ${n.title}`, onclick: (e) => { e.stopPropagation(); mapDelete(it.id); } }, icon('close'))),
   prefs.mapDetails && h('p', { class: 'map-syn' }, n.synopsis || h('span', { class: 'muted' }, 'No synopsis yet.')),

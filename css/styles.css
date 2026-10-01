@@ -866,13 +866,13 @@ body:has(.drawer).no-inspector .main, body.focus:has(.drawer) .main { padding-ri
 .map-drop.is-row .drop-label { left: 50%; top: -10px; transform: translateX(-50%); right: auto; }
 .map-drop.is-col .drop-label { top: -22px; left: 50%; transform: translateX(-50%); right: auto; }
 .map-drop.is-inside .drop-label { left: -8px; top: -11px; transform: translateX(-100%); right: auto; }
-.map-rename-btn { flex: none; display: none; place-items: center; width: 20px; height: 20px; margin: -2px -4px 0 0; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); }
+.map-tools { position: absolute; top: 4px; right: 4px; z-index: 2; display: flex; gap: 1px; padding: 2px; border-radius: 7px; background: var(--surface); box-shadow: var(--shadow); border: 1px solid var(--line); opacity: 0; pointer-events: none; transition: opacity .12s; }
+.map-card:hover .map-tools, .map-card:focus-within .map-tools { opacity: 1; pointer-events: auto; }
+.map-card.renaming .map-tools, .map-card.dragging .map-tools { display: none; }
+.map-rename-btn { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); }
 .map-rename-btn .icon { width: 12px; height: 12px; }
 .map-rename-btn:hover { background: var(--surface-2); color: var(--accent); }
-.map-del-btn { margin-left: 2px; }
 .map-del-btn:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
-.map-card:hover .map-rename-btn, .map-card:focus-within .map-rename-btn { display: grid; }
-.map-card.renaming .map-rename-btn { display: none; }
 .map-title { cursor: text; }
 .map-rename { flex: 1; min-width: 0; padding: 2px 6px !important; font-size: 13px; border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft) !important; }
 .map-card.just-added { animation: just-added 1.2s ease-out; }
