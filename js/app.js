@@ -49,7 +49,7 @@ const state = {
 const prefs = loadPrefs();
 function loadPrefs() {
   const d = { skin: 'studio', type: {}, typeCss: null, theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10,
-    toured: false, inspector: true, spellcheck: true, readTitles: false, readGaps: true, mapDir: 'right', mapDetails: false, mapZoom: 1, exportPrefs: null, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
+    toured: false, inspector: true, binder: true, spellcheck: true, readTitles: false, readGaps: true, mapDir: 'right', mapDetails: false, mapZoom: 1, exportPrefs: null, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
   try { return { ...d, ...JSON.parse(localStorage.getItem('wb-prefs') || '{}') }; } catch { return d; }
 }
 function savePrefs() {
@@ -113,6 +113,8 @@ const ICONS = {
   fade: 'M4 6h10M4 12h16M4 18h8',
   help: 'M12 21a9 9 0 100-18 9 9 0 000 18zM9.5 9.2a2.6 2.6 0 015 .6c0 1.7-2.5 2.1-2.5 3.7M12 17h.01',
   panel: 'M4 5h16v14H4zM15 5v14',
+  sidebar: 'M4 5h16v14H4zM9 5v14',
+  collapse: 'M15 6l-6 6 6 6M19 6v12',
   more: 'M6 12h.01M12 12h.01M18 12h.01',
   print: 'M7 9V4h10v5M7 17H5a1 1 0 01-1-1v-5a2 2 0 012-2h12a2 2 0 012 2v5a1 1 0 01-1 1h-2M7 14h10v6H7z',
   share: 'M12 15V4M8 8l4-4 4 4M5 13v6h14v-6',
@@ -1165,6 +1167,7 @@ function render() {
   syncStage();
   document.body.classList.toggle('focus', state.focus);
   document.body.classList.toggle('no-inspector', !prefs.inspector || state.view === 'desk');
+  document.body.classList.toggle('no-binder', !prefs.binder);
   const scroll = document.querySelector('.main')?.scrollTop;
   const binderScroll = document.querySelector('.tree')?.scrollTop;
   app.replaceChildren(
@@ -1172,7 +1175,7 @@ function render() {
     h('div', { class: 'workspace' }, renderBinder(), renderMain(), renderInspector()),
   );
   if (scroll != null && state.lastRenderKey === `${state.view}:${state.selectedId}`) document.querySelector('.main').scrollTop = scroll;
-  if (binderScroll != null) document.querySelector('.tree').scrollTop = binderScroll;
+  if (binderScroll != null && document.querySelector('.tree')) document.querySelector('.tree').scrollTop = binderScroll;
   state.lastRenderKey = `${state.view}:${state.selectedId}`;
   renderStatus();
   paintDrawer();
@@ -1266,6 +1269,10 @@ function renderTopbar() {
       h('div', { id: 'status', class: 'status' }),
       h('div', { class: 'bar-cluster', role: 'group', 'aria-label': 'Layout' },
         h('button', {
+          class: `icon-btn panel-btn ${prefs.binder ? 'on' : ''}`, 'aria-pressed': String(prefs.binder),
+          title: `${prefs.binder ? 'Hide' : 'Show'} the outline (${MOD}⇧\\)`, onclick: toggleBinder,
+        }, icon('sidebar')),
+        h('button', {
           class: `icon-btn panel-btn ${prefs.inspector ? 'on' : ''}`, 'aria-pressed': String(prefs.inspector),
           title: `${prefs.inspector ? 'Hide' : 'Show'} the side panel (${MOD}\\)`, onclick: toggleInspector,
         }, icon('panel')),
@@ -1307,12 +1314,15 @@ function renderStatus() {
   } else if (state.saveError) {
     parts.push(h('button', { class: 'btn small danger', onclick: () => save() }, 'Save failed. Retry'));
   } else if (state.handle) {
-    parts.push(h('span', { class: `saved ${state.dirty || state.saving ? 'pending' : ''}`, title: state.fileName },
-      state.dirty || state.saving ? 'Saving…' : h('span', null, icon('check'), ` ${state.fileName}`)));
+    // Enough to know it's safe; the file's name is there on hover.
+    const pending = state.dirty || state.saving;
+    parts.push(h('span', { class: `saved ${pending ? 'pending' : ''}`, tabindex: 0, 'aria-label': pending ? 'Saving' : `Saved to ${state.fileName}` },
+      pending ? 'Saving…' : [icon('check'), 'Saved'],
+      h('span', { class: 'saved-file', role: 'tooltip' }, `Saving to ${state.fileName}`)));
   } else if (state.dirty) {
     parts.push(h('button', { class: 'btn small primary', onclick: saveAs }, S.canAutosave ? 'Save to file…' : 'Download to save'));
   } else if (state.fileName) {
-    parts.push(h('span', { class: 'saved' }, icon('check'), ` ${state.fileName}`));
+    parts.push(h('span', { class: 'saved', tabindex: 0 }, icon('check'), 'Downloaded', h('span', { class: 'saved-file', role: 'tooltip' }, `Last downloaded as ${state.fileName}`)));
   }
   el.replaceChildren(...parts);
 }
@@ -1340,6 +1350,10 @@ function matches(n, q) {
 
 function renderBinder() {
   const p = P();
+  if (!prefs.binder) {
+    return h('button', { class: 'binder-tab', title: `Show the outline (${MOD}⇧\\)`, 'aria-label': 'Show the outline', onclick: toggleBinder },
+      icon('sidebar'), h('span', null, 'Outline'));
+  }
   const q = state.filter.trim().toLowerCase();
   let visible = null;
   if (q) {
@@ -1393,6 +1407,7 @@ function renderBinder() {
 
   return h('aside', { class: 'binder' },
     h('div', { class: 'binder-search' }, icon('search'),
+      h('button', { class: 'icon-btn small binder-hide', title: `Hide the outline (${MOD}⇧\\)`, 'aria-label': 'Hide the outline', onclick: toggleBinder }, icon('collapse')),
       h('input', {
         type: 'search', placeholder: 'Find in book…', value: state.filter, 'aria-label': 'Find in book',
         oninput: (e) => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const i = document.querySelector('.binder-search input'); i.focus(); i.setSelectionRange(pos, pos); },
@@ -2949,6 +2964,13 @@ function typeControls() {
         h('span', { class: 'range-val' }, leading.toFixed(2)))));
 }
 
+function toggleBinder() {
+  prefs.binder = !prefs.binder;
+  savePrefs();
+  render();
+  if (!prefs.binder) toast(`Outline tucked away. Click the tab on the left (or ${MOD}⇧\\) to bring it back.`);
+}
+
 function toggleInspector() {
   prefs.inspector = !prefs.inspector;
   savePrefs();
@@ -4033,7 +4055,8 @@ document.addEventListener('keydown', (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); state.handle ? save() : saveAs(); }
   if (mod && e.key === '.') { e.preventDefault(); toggleFocus(); }
-  if (mod && e.key === '\\') { e.preventDefault(); toggleInspector(); }
+  if (mod && !e.shiftKey && e.key === '\\') { e.preventDefault(); toggleInspector(); }
+  if (mod && e.shiftKey && (e.key === '|' || e.key === '\\')) { e.preventDefault(); toggleBinder(); }
   if (mod && e.key.toLowerCase() === 'e' && !document.querySelector('dialog[open]')) { e.preventDefault(); openExport(); }
   if (e.key === 'Escape' && state.focus) toggleFocus();
 });
