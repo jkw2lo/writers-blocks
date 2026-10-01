@@ -1,8 +1,10 @@
 import * as E from '../lib/echoes.js';
 import * as M from '../lib/model.js';
+import { normalizeHtml } from '../lib/format.js';
 import { fmt, h, icon } from '../core/dom.js';
 import { P, prefs, savePrefs, state } from '../core/state.js';
 import { select } from '../project/commands.js';
+import { paraClass } from '../ui/formatting.js';
 import { render } from '../ui/shell.js';
 import { openEchoes, runStoryCheck } from '../ui/tools.js';
 import { aiReady } from './notebook.js';
@@ -30,7 +32,7 @@ export function renderRead() {
       : prevScene && node.content ? h('p', { class: 'read-break', 'aria-hidden': 'true' }, '✱ ✱ ✱') : null;
     if (lvl < 3) prevScene = false;
     const empty = !node.content && !node.children.length;
-    const body = node.content ? h('div', { class: 'read-prose prose', html: node.content })
+    const body = node.content ? h('div', { class: `read-prose prose ${paraClass()}`, html: normalizeHtml(node.content) })
       : empty && prefs.readGaps ? h('p', { class: 'read-gap' }, `${node.title}: not written yet`, node.synopsis && ` · ${node.synopsis}`) : null;
     if (node.content && lvl === 3) prevScene = true;
     if (!head && !body) continue;

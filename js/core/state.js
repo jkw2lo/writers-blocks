@@ -47,7 +47,8 @@ export const state = {
 export const prefs = loadPrefs();
 export function loadPrefs() {
   const d = { skin: 'studio', type: {}, typeCss: null, theme: 'auto', aiEnabled: false, model: AI.MODELS[0].id, rememberKey: false, apiKey: '', directionOpen: true, fontSize: 19, notebookLayout: 'grid', zoom: 1, sprintMinutes: 10,
-    toured: false, inspector: true, binder: true, spellcheck: true, readTitles: false, readGaps: true, mapDir: 'right', mapDetails: false, mapZoom: 1, exportPrefs: null, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true };
+    toured: false, inspector: true, binder: true, spellcheck: true, readTitles: false, readGaps: true, mapDir: 'right', mapDetails: false, mapZoom: 1, exportPrefs: null, sounds: false, soundVolume: 0.5, typewriterScroll: false, fadeRest: false, celebrate: true,
+    paraStyle: 'indent', smartPunct: true, autoWordStyles: true };
   try { return { ...d, ...JSON.parse(localStorage.getItem('wb-prefs') || '{}') }; } catch { return d; }
 }
 export function savePrefs() {

@@ -154,6 +154,7 @@ export function newProject(title = 'Untitled Book', shape = 'blank') {
     notebook: [],
     links: [],
     trash: [],
+    wordStyles: [], // { id, form, also, style }: names and terms always written one way
   };
 }
 
@@ -183,6 +184,7 @@ export function validate(p) {
   p.notebook ||= [];
   p.links ||= [];
   p.trash ||= [];
+  p.wordStyles ||= [];
   p.notebook.forEach((n, i) => {
     n.color ||= ['yellow', 'peach', 'green'][i % 3];
     n.nodeId ??= null;

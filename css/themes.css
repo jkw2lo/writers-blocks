@@ -119,6 +119,7 @@
 [data-skin="nocturne"] .welcome h1 { font-size: 58px; font-weight: 500; letter-spacing: .01em; }
 [data-skin="nocturne"] .lede { font-size: 20px; }
 [data-skin="nocturne"] .title-input { font-size: 36px !important; font-weight: 500 !important; }
+[data-skin="nocturne"] .editor.prose > p:first-child { text-indent: 0; }
 [data-skin="nocturne"] .editor.prose > p:first-child::first-letter { font-family: var(--display); font-size: 3.2em; float: left; line-height: .9; margin: .06em .08em 0 0; color: var(--accent); }
 [data-skin="nocturne"] .card { background-image: none; }
 [data-skin="nocturne"] .btn.primary { box-shadow: 0 0 24px rgb(232 174 91 / .25); }

@@ -80,7 +80,9 @@ export const SECTIONS = [
     id: 'writing', title: 'Writing', html: `
 <ul>
   <li><strong>Direction</strong>: above the draft, <em>What happens</em> and <em>Why it’s here</em> keep you pointed somewhere. <em>Before</em> and <em>After</em> show the neighbouring blocks. Collapse the panel when you want more room.</li>
-  <li><strong>Formatting</strong>: bold, italic, headings, quotes, lists and scene breaks (✱) from the toolbar. Pasted text arrives as plain paragraphs.</li>
+  <li><strong>Formatting</strong>: the style picker at the start of the toolbar shows what the cursor is in (Body text, Heading, Subheading, Quote); choose the style it already has to turn it back into body text. Bold, italic, lists and scene breaks (✱) sit beside it. Pasted text arrives as plain paragraphs.</li>
+  <li><strong>Aa Format</strong>: change case (Sentence case, lowercase, UPPERCASE, Title Case) for the selection or the paragraph you’re in; tidy punctuation and spaces in a block or the whole book; choose how paragraphs are indented; and turn smart quotes and dashes on or off.</li>
+  <li><strong>Word styles</strong> (<em>Aa Format → Word styles…</em>): names and terms that should always look the same, like “eBay”, a character’s name, or a ship in italics. They’re fixed as you type (${k(mod, 'Z')} puts back what you typed) or across the whole book at once.</li>
   <li><strong>Focus mode</strong> (${k(mod, '.')}) hides everything but the page. ${k('Esc')} to leave.</li>
   <li><strong>Word targets</strong>: set one per block in the right panel, and one for the whole book on its overview.</li>
 </ul>

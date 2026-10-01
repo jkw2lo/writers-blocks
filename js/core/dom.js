@@ -59,6 +59,10 @@ export const ICONS = {
   home: 'M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6',
   echo: 'M4 7h9M4 12h13M4 17h9M17 5l3 2-3 2M17 15l3 2-3 2',
   import: 'M12 4v11M8 11l4 4 4-4M5 19h14',
+  case: 'M2 18L7 6l5 12M3.7 14h6.6M15 10.5a2.5 2.5 0 015 0V18M20 14.5h-2.5a2 2 0 100 3.5H20',
+  eraser: 'M15 4l5 5-10 10H6l-3-3zM8.5 10.5l5 5M11 19h10',
+  tag: 'M3 12V4h8l10 10-8 8zM7.5 8h.01',
+  para: 'M13 4v16M17 4v16M20 4H9.5a4.5 4.5 0 000 9H13',
   read: 'M3 5h6a3 3 0 013 3v11a2 2 0 00-2-2H3zM21 5h-6a3 3 0 00-3 3v11a2 2 0 012-2h7z',
 };
 export function icon(name, cls = '') {
@@ -97,11 +101,12 @@ export const textToHtml = (t) =>
     .map((para) => `<p>${escapeHtml(para).replace(/\n/g, '<br>')}</p>`).join('');
 
 export let toastTimer;
-export function toast(msg, { undo = false, error = false, cheer = false } = {}) {
+// `undo` offers the app's structural undo; `onUndo` runs your own instead.
+export function toast(msg, { undo = false, onUndo = null, error = false, cheer = false } = {}) {
   const t = document.getElementById('toast');
   t.replaceChildren(cheer ? h('span', { class: 'cheer-icon' }, icon('spark')) : '', h('span', null, msg));
   t.className = `show ${error ? 'error' : ''} ${cheer ? 'cheer' : ''}`;
-  if (undo) t.append(h('button', { class: 'link', onclick: () => { restoreUndo(); t.className = ''; } }, 'Undo'));
+  if (undo || onUndo) t.append(h('button', { class: 'link', onclick: () => { (onUndo || restoreUndo)(); t.className = ''; } }, 'Undo'));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.className = ''), undo || cheer ? 6000 : 3500);
+  toastTimer = setTimeout(() => (t.className = ''), undo || onUndo || cheer ? 6000 : 3500);
 }

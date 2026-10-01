@@ -6,7 +6,7 @@
 // Fonts: cache first, since they never change once published.
 // Anything else (the optional AI assistant) goes straight to the network.
 
-const VERSION = 'wb-v10';
+const VERSION = 'wb-v11';
 const APP = [
   './',
   'index.html',
@@ -22,6 +22,7 @@ const APP = [
   'js/lib/celebrate.js',
   'js/lib/echoes.js',
   'js/lib/export.js',
+  'js/lib/format.js',
   'js/lib/help.js',
   'js/lib/import.js',
   'js/lib/model.js',
@@ -38,6 +39,7 @@ const APP = [
   'js/ui/brainstorm.js',
   'js/ui/drag-drop.js',
   'js/ui/export-dialog.js',
+  'js/ui/formatting.js',
   'js/ui/help-tour.js',
   'js/ui/import-dialog.js',
   'js/ui/inspector.js',

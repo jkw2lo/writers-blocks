@@ -5,6 +5,7 @@
 // plain text. Everything runs in the browser, so it works offline.
 
 import { flatten, treeWords, nodeWords, stripHtml, htmlToMarkdown, STATUSES, TYPES } from './model.js';
+import { normalizeHtml } from './format.js';
 
 export const KINDS = {
   manuscript: {
@@ -103,7 +104,7 @@ export function build(p, kind, opts, scopeId = 'root') {
         blocks.push({ t: 'scenebreak' });
       }
       first = false;
-      if (node.content) { blocks.push({ t: 'prose', html: node.content }); if (lvl === 3) prevSection = true; }
+      if (node.content) { blocks.push({ t: 'prose', html: normalizeHtml(node.content) }); if (lvl === 3) prevSection = true; }
     }
   }
 
@@ -123,7 +124,7 @@ export function build(p, kind, opts, scopeId = 'root') {
         const ideas = p.notebook.filter((x) => x.nodeId === node.id && x.text.trim()).map((x) => x.text.trim());
         if (ideas.length) blocks.push({ t: 'ideas', items: ideas });
       }
-      if (node.content) blocks.push({ t: 'prose', html: node.content });
+      if (node.content) blocks.push({ t: 'prose', html: normalizeHtml(node.content) });
       else if (opts.placeholders && isLeaf(node)) blocks.push({ t: 'placeholder', text: 'Not written yet.' });
     }
   }
@@ -172,7 +173,7 @@ export function build(p, kind, opts, scopeId = 'root') {
     if (kind === 'snapshot' && opts.excerpt !== 'none') {
       const ex = opts.excerpt === 'auto' ? bestExcerpt(p, scope.id) : p.nodes[opts.excerpt];
       if (ex?.content) {
-        const { html, truncated } = truncateHtml(ex.content, 600);
+        const { html, truncated } = truncateHtml(normalizeHtml(ex.content), 600);
         blocks.push({ t: 'label', text: 'An excerpt' });
         blocks.push({ t: 'excerpt', title: ex.title, html, truncated });
       }

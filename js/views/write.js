@@ -11,6 +11,7 @@ import { render } from '../ui/shell.js';
 import { openEchoes, paintDrawer, runPolish } from '../ui/tools.js';
 import { refreshCounts } from '../ui/topbar.js';
 import { followCaret, updateFade, writingToggles } from '../ui/writing-aids.js';
+import { autoFormat, blockStyleButton, formatMenuButton, normalizeEditor, paraClass, refreshToolbar } from '../ui/formatting.js';
 import { aiReady } from './notebook.js';
 
 export function crumbs(n) {
@@ -46,15 +47,18 @@ export function renderWrite() {
   );
 
   const ed = h('div', {
-    class: 'editor prose', contentEditable: 'true', spellcheck: prefs.spellcheck,
+    class: `editor prose ${paraClass()}`, contentEditable: 'true', spellcheck: prefs.spellcheck,
     'data-placeholder': kids.length ? `Optional opening text for this ${typeLabel}…` : 'Start writing…',
     'aria-label': 'Draft text',
   });
   ed.innerHTML = n.content;
+  if (normalizeEditor(ed)) n.content = ed.innerHTML; // older drafts: every paragraph gets a <p>
   ed.classList.toggle('fade-rest', prefs.fadeRest);
   const countTimer = { echo: null };
   let wcTimer;
-  ed.addEventListener('input', () => {
+  ed.addEventListener('input', (e) => {
+    normalizeEditor(ed);
+    autoFormat(ed, e);
     n.content = /^(\s|<br>|<p><br><\/p>|<div><br><\/div>)*$/.test(ed.innerHTML) ? '' : ed.innerHTML;
     state.session?.touched.add(n.id);
     n.editedAt = new Date().toISOString();
@@ -73,12 +77,14 @@ export function renderWrite() {
   });
   ed.addEventListener('focus', () => document.execCommand('defaultParagraphSeparator', false, 'p'));
   ed.addEventListener('keyup', (e) => { if (e.key.startsWith('Arrow') || e.key.startsWith('Page')) followCaret(ed); });
-  ed.addEventListener('mouseup', () => followCaret(ed));
+  // Clicking only updates the fade: scrolling here would move the page between the two
+  // clicks of a double-click. Typewriter scrolling catches up on your next keystroke.
+  ed.addEventListener('mouseup', () => updateFade(ed));
   ed.addEventListener('focus', () => updateFade(ed));
   ed.addEventListener('blur', () => ed.classList.remove('fading')); // show everything when you're not writing
 
-  const tb = (label, title, fn) => h('button', { class: 'tb', title, onmousedown: (e) => { e.preventDefault(); fn(); } }, label);
-  const exec = (cmd, arg) => () => { document.execCommand(cmd, false, arg); ed.dispatchEvent(new Event('input')); };
+  const tb = (label, title, fn, cmd) => h('button', { class: 'tb', title, 'data-cmd': cmd, onmousedown: (e) => { e.preventDefault(); fn(); } }, label);
+  const exec = (cmd, arg) => () => { document.execCommand(cmd, false, arg); ed.dispatchEvent(new Event('input')); refreshToolbar(ed); };
 
   return h('div', { class: `write ${prefs.typewriterScroll ? 'tw-scroll' : ''}` },
     crumbs(n),
@@ -100,13 +106,13 @@ export function renderWrite() {
           h('span', { class: 'wc' }, fmt(M.treeWords(P(), k.id))))))),
     ),
     h('div', { class: 'toolbar', role: 'toolbar' },
-      tb(h('b', null, 'B'), 'Bold (⌘B)', exec('bold')),
-      tb(h('i', null, 'I'), 'Italic (⌘I)', exec('italic')),
-      tb('H', 'Heading', exec('formatBlock', 'h2')),
-      tb('¶', 'Paragraph', exec('formatBlock', 'p')),
-      tb('“', 'Quote', exec('formatBlock', 'blockquote')),
-      tb('•', 'List', exec('insertUnorderedList')),
+      blockStyleButton(ed),
+      h('span', { class: 'tb-sep' }),
+      tb(h('b', null, 'B'), 'Bold (⌘B)', exec('bold'), 'bold'),
+      tb(h('i', null, 'I'), 'Italic (⌘I)', exec('italic'), 'italic'),
+      tb('•', 'Bulleted list', exec('insertUnorderedList'), 'insertUnorderedList'),
       tb('✱', 'Scene break', exec('insertHorizontalRule')),
+      formatMenuButton(ed),
       h('span', { class: 'tb-sep' }),
       h('button', { class: 'tb wide', title: 'Split this block into two at the cursor', onmousedown: (e) => { e.preventDefault(); splitAtCursor(); } }, icon('split'), 'Split here'),
       h('button', { class: 'tb wide', title: 'Echoes: repeated words, phrases and crutch words in this block', onmousedown: (e) => e.preventDefault(), onclick: openEchoes }, icon('echo'), 'Echoes'),

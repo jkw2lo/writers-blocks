@@ -32,6 +32,12 @@ New to it? The app has a **quick start** on how to approach a project, a searcha
   - **Typing sounds**: typewriter clacks, and a bell and carriage return on Enter. Synthesized in the browser, so they work offline. Off by default.
   - **Typewriter scrolling**: keeps the line you're writing in the middle of the screen.
   - **Fade the rest**: dims every paragraph except the one you're in.
+- **Formatting** on the writing toolbar:
+  - **Paragraph style** picker (Body text, Heading, Subheading, Quote) that shows what the cursor is in; pick the style it already has to turn it back into body text. Bold, italic and lists light up when they're on.
+  - **Format menu** (*Aa Format*): **change case** (Sentence case, lowercase, UPPERCASE, Title Case) for the selection or the paragraph you're in, keeping italics and acronyms like "BBC"; **clear formatting**; **tidy punctuation & spaces** in a block or the whole book (curly quotes, em dashes, ellipses, doubled spaces, spaces typed as an indent).
+  - **Paragraphs**: indent every paragraph, indent like a printed book (first paragraph flush), or space between with no indent. Applies to Write and Read.
+  - **Smart quotes & dashes as you type**: `"` and `'` curl, `--` becomes —, `...` becomes ….
+  - **Word styles**: names and terms that should always look the same, like a company ("eBay", "McKinsey & Company"), a character, or a ship in italics. Any capitalisation is caught, plus other spellings you list. They're fixed as you type (⌘/Ctrl+Z puts back what you typed) or across a block or the whole book, and saved with the project.
 - **Watch it come together**: a progress ring for the book's word target, a "+N this session" count, and a little confetti when a block hits its word target, you mark something Done, or the book passes a milestone (5,000 words, novelette length, novel length…). Closing a project shows a summary of the session. Celebrations can be turned off in Settings.
 - **Trash**: deleted blocks wait in the Trash (kept in your project file) until you restore them or delete them for good.
 - **Echoes**: a repetition checker for close repeats, overused words, repeated phrases and crutch words, highlighted in place. Runs locally, no AI.
@@ -128,7 +134,8 @@ js/ui/                  the shell around the views: top bar, outline panel, insp
 js/views/               one file per view: welcome, desk, write, board, outline, map, read,
                         notebook, share, trash
 js/lib/                 framework-free logic: data model, file storage, AI, import, export,
-                        Echoes, prompts, sounds, confetti, help text
+                        formatting (case, punctuation, word styles), Echoes, prompts, sounds,
+                        confetti, help text
 tests/                  in-browser tests: serve the folder and open /tests/
 sw.js                   service worker: offline cache for the app and fonts
 manifest.webmanifest    makes the app installable
@@ -137,7 +144,7 @@ examples/               a sample project to explore
 
 ## Tests
 
-Serve the folder (see *Run locally*) and open http://localhost:5173/tests/. The tests cover the data model, import, export (every Word file is checked for valid XML), Echoes, the Map layout (no overlapping cards), and the Desk's suggestions. The page title shows the result, e.g. "✓ 44 passed".
+Serve the folder (see *Run locally*) and open http://localhost:5173/tests/. The tests cover the data model, import, export (every Word file is checked for valid XML), formatting (case, smart punctuation, word styles), Echoes, the Map layout (no overlapping cards), and the Desk's suggestions. The page title shows the result, e.g. "✓ 59 passed".
 
 ## Ideas for later
 
