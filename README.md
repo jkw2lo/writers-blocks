@@ -4,6 +4,8 @@ A writing workspace for long-form work (novels, memoir, long stories, essay coll
 
 ## What it does
 
+**A flow, not just features.** The app follows the stages of writing a book: **① Gather** (premise, notebook, brainstorming) → **② Plan** (Map, Outline, Board) → **③ Draft** (Write) → **④ Revise** (Read, Echoes, Polish, Story check) → **⑤ Share** (export). Each stage shows only its own views and tools, with a line on how far along it is. The **Desk** is home: it reads the project and suggests a next step (write the premise, keep writing the block you were on, read a finished part through). It suggests; you choose.
+
 New to it? The app has a **quick start** on how to approach a project, a searchable **help guide** to every feature, and a one-minute **guided tour** (offered the first time you open a project). They're all behind the **?** button in the top bar, or press `?`. **Start a new project** lets you begin from a blank page or a starting shape: a novel in three acts, memoir, essay collection, nonfiction argument, or short story.
 
 - **Blocks, not one long doc.** Your book is a tree: **Parts → Chapters → Sections**. Each block has its own draft text, plus:

@@ -18,13 +18,15 @@ export const SECTIONS = [
   <li><strong>Loose ideas go in the Notebook.</strong> Not everything has a place yet. Catch it anyway; you can drag it into the outline when it finds one.</li>
 </ul>
 
+<p>Lost? Click <strong>Desk</strong> at the left of the stage bar. It always has a suggestion for what to do next.</p>
+
 <h3>Your first twenty minutes</h3>
 <ol class="steps">
   <li><strong>Pick a starting shape.</strong> <em>Start a new project</em> offers a blank page or a scaffold (a novel in three acts, memoir, essays, a nonfiction argument, a short story). Choose whatever’s closest; you can reshape it all.</li>
-  <li><strong>Write the premise.</strong> Click the book’s title at the top of the outline. Fill in <em>Premise</em> and <em>What it’s really about</em>. Keep them rough. They’re for you.</li>
+  <li><strong>Write the premise.</strong> In <em>① Gather</em>, open <em>Premise</em>. Fill in <em>Premise</em> and <em>What it’s really about</em>. Keep them rough. They’re for you.</li>
   <li><strong>Sketch the big pieces.</strong> Rename the parts and chapters to what you actually imagine. Add or delete freely. Don’t go deeper than chapters yet.</li>
-  <li><strong>Give a few chapters a direction.</strong> Open the <em>Outline</em> tab and fill in <em>What happens</em> down the column. Read it top to bottom: does the story hold together?</li>
-  <li><strong>Write the block you’re most excited about.</strong> Not necessarily the first one. Select it, and start writing in the <em>Write</em> view.</li>
+  <li><strong>Give a few chapters a direction.</strong> In <em>② Plan</em>, open the <em>Outline</em> and fill in <em>What happens</em> down the column. Read it top to bottom: does the story hold together?</li>
+  <li><strong>Write the block you’re most excited about.</strong> Not necessarily the first one. Select it in the outline and you’re in <em>③ Draft</em>.</li>
 </ol>
 
 <h3>Habits that help</h3>
@@ -51,10 +53,22 @@ export const SECTIONS = [
   <li>Want more room? Hide the right-hand panel with the panel button in the top bar (${k(mod, '\\')}).</li>
 </ul>` },
   {
-    id: 'views', title: 'The four views', html: `
+    id: 'views', title: 'Stages, the Desk and views', html: `
+<p>Writing a book moves through five stages, and you go back and forth between them all the time. The second line of the top bar is a stepper through them. Each stage shows only its own views, and the side panel shows the tools for that stage.</p>
 <ul>
-  <li>The tabs are grouped by stage of work: <strong>Draft</strong> (Write, Notebook), <strong>Shape</strong> (Outline, Map, Board) and <strong>Share</strong> (Read, Export).</li>
-  <li><strong>Write</strong>: the editor for the selected block, with its direction, where it sits, and its neighbours above it. Select the book itself to see the overview: premise, word target, and progress by status.</li>
+  <li><strong>① Gather</strong>: find the idea. <em>Premise</em> and the <em>Notebook</em>, with brainstorming in the side panel.</li>
+  <li><strong>② Plan</strong>: give it a shape, and every piece a direction. <em>Map</em>, <em>Outline</em> and <em>Board</em>.</li>
+  <li><strong>③ Draft</strong>: write it, one block at a time. <em>Write</em> (and the Notebook). At the end of each block, <em>Next up</em> takes you to the next one in the book.</li>
+  <li><strong>④ Revise</strong>: make it good. <em>Read</em> it through, then use Echoes, Polish and Story check.</li>
+  <li><strong>⑤ Share</strong>: export, print, or show where it stands.</li>
+</ul>
+<p>The thin bar under each stage shows how far along it is, and the line at the right of the stepper says exactly where things stand.</p>
+<p><strong>The Desk</strong> (the button at the start of the stepper, or click the book’s title in the outline) is home. It reads your project and suggests a next step: write your premise, keep writing the block you were on, give some chapters a direction, or read a finished part through. It only suggests; you choose. It also shows how far along each stage is, and what you worked on last.</p>
+<h3>The views</h3>
+<ul>
+  <li><strong>Premise</strong>: the book as a whole: premise, what it’s really about, word target, and progress by status.</li>
+  <li><strong>Write</strong>: the editor for the selected block, with its direction, where it sits, and its neighbours above it.</li>
+  <li><strong>Share</strong>: the four kinds of export, ready to preview.</li>
   <li><strong>Board</strong>: the pieces of a part or chapter as index cards. Drag to reorder; edit titles and synopses on the cards. <em>Up a level</em> zooms out.</li>
   <li><strong>Map</strong>: the whole book drawn as a tree, every part, chapter and section at once, sideways or top-down. Click a card to select it, double-click to write, right-click for the block menu. Hover a card for two <strong>+</strong> buttons: on its outer edge to add a block inside, and in the gap after it to add the next one; name it right there. Drag a card to move it: a line shows where it will land and what it will sit in, and dropping on the middle of a card puts it inside. Fold branches on the map (the outline isn’t affected), show synopses on the cards, zoom, and <em>Fit</em> it all on screen.</li>
   <li><strong>Read</strong>: the whole book (or one part or chapter) as continuous pages, the way a reader will meet it. Double-click any paragraph to jump straight to it in the editor. Turn on <em>Show gaps</em> to see what’s still unwritten.</li>

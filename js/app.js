@@ -21,7 +21,8 @@ const state = {
   saving: false,
   saveError: null,
   selectedId: 'root',
-  view: 'write', // write | board | outline | notebook
+  view: 'desk', // desk | premise | notebook | map | outline | board | write | read | share | trash
+  stage: null, // gather | plan | draft | revise | share (null on the Desk)
   focus: false,
   filter: '',
   outlineLevel: 'all',
@@ -116,6 +117,7 @@ const ICONS = {
   print: 'M7 9V4h10v5M7 17H5a1 1 0 01-1-1v-5a2 2 0 012-2h12a2 2 0 012 2v5a1 1 0 01-1 1h-2M7 14h10v6H7z',
   share: 'M12 15V4M8 8l4-4 4 4M5 13v6h14v-6',
   pen: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+  home: 'M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6',
   echo: 'M4 7h9M4 12h13M4 17h9M17 5l3 2-3 2M17 15l3 2-3 2',
   import: 'M12 4v11M8 11l4 4 4-4M5 19h14',
   read: 'M3 5h6a3 3 0 013 3v11a2 2 0 00-2-2H3zM21 5h-6a3 3 0 00-3 3v11a2 2 0 012-2h7z',
@@ -246,6 +248,7 @@ function loadProject(text, { handle = null, name = null, stamp = null, keepPlace
   state.saveError = null;
   state.dirty = false;
   if (!keepPlace || !p.nodes[state.selectedId]) state.selectedId = firstLeaf(p) || 'root';
+  if (!keepPlace) { state.view = 'desk'; state.stage = null; }
   state.undo = [];
   state.aiResults = {};
   state.spark = null;
@@ -308,6 +311,8 @@ async function cmdNew() {
   state.aiResults = {};
   state.spark = null;
   state.selectedId = 'root';
+  state.view = 'desk';
+  state.stage = null;
   state.dirty = true;
   startSession();
   render();
@@ -686,7 +691,8 @@ const showHelp = (section) => openHelp({ section, onTour: state.project ? runTou
 const TOUR = [
   { el: null, title: 'Welcome to Writers Blocks', text: 'Here’s a one-minute look around. Use the arrow keys or the buttons, and press Esc to skip. You can replay this from Help any time.' },
   { el: '.binder .tree', title: 'The outline', text: 'Your book as a tree of parts, chapters and sections. Click a block to open it, drag to rearrange (a line shows where it will land), or hover and click <b>+</b> to add inside. Right-click any block for more: rename, move, change its kind, delete.' },
-  { el: '.tabs', title: 'Four ways to look at it', text: '<b>Write</b> one block at a time. <b>Board</b> shows a chapter as index cards. <b>Outline</b> is the whole book as a table. <b>Map</b> draws it as a tree. <b>Read</b> shows it as continuous pages. <b>Notebook</b> holds loose ideas.' },
+  { el: '.stages', title: 'Five stages of writing a book', text: '<b>Gather</b> the idea, <b>Plan</b> its shape, <b>Draft</b> it, <b>Revise</b> it, <b>Share</b> it. Each stage shows only its own views, and you can move back and forth any time.' },
+  { el: '.desk-btn', title: 'Your desk', text: 'Not sure what to do next? The Desk reads your project and suggests a next step, like the block to keep writing or the part that’s ready to read through. It suggests; you choose.' },
   { el: '.direction', title: 'Every block has a direction', text: '<b>What happens</b> and <b>Why it’s here</b> keep you pointed somewhere. Below them are the blocks just before and after, so you know what you’re writing toward.' },
   { el: '.toolbar', title: 'The writing toolbar', text: 'Formatting, and <b>Split here</b> to break a block in two. On the right are your writing aids: typing sounds, typewriter scrolling, and fade the rest.' },
   { el: '.inspector', title: 'This block, and ideas', text: 'Set a block’s status and word target, add tags and notes, and move it around. Further down, <b>Brainstorm</b> deals prompts, runs freewriting sprints, and collides ideas. Hide this panel with the panel button in the top bar when you want quiet.' },
@@ -1156,8 +1162,9 @@ const app = document.getElementById('app');
 function render() {
   document.documentElement.style.setProperty('--editor-size', `${prefs.fontSize}px`);
   if (!state.project) return renderWelcome();
+  syncStage();
   document.body.classList.toggle('focus', state.focus);
-  document.body.classList.toggle('no-inspector', !prefs.inspector);
+  document.body.classList.toggle('no-inspector', !prefs.inspector || state.view === 'desk');
   const scroll = document.querySelector('.main')?.scrollTop;
   const binderScroll = document.querySelector('.tree')?.scrollTop;
   app.replaceChildren(
@@ -1247,40 +1254,27 @@ function bookshelf() {
 
 function renderTopbar() {
   const root = P().nodes.root;
-  // Tabs grouped by stage of work: drafting, shaping the structure, then reading and sharing.
-  const groups = [
-    { label: 'Draft', hint: 'Write, and keep loose ideas', views: [['write', 'Write'], ['notebook', `Notebook${P().notebook.length ? ` · ${P().notebook.length}` : ''}`]] },
-    { label: 'Shape', hint: 'See and rearrange the structure', views: [['outline', 'Outline'], ['map', 'Map'], ['board', 'Board']] },
-    { label: 'Share', hint: 'Read it through, export, print', views: [['read', 'Read']], extra: h('button', { class: 'tab tab-action', title: `Export, print or share (${MOD}E)`, onclick: () => openExport() }, icon('share'), 'Export') },
-  ];
   return h('header', { class: 'topbar' },
-    h('div', { class: 'brand', title: 'Writers Blocks' }, h('div', { class: 'logo-blocks small', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))),
-    fileMenu(),
-    h('input', {
-      class: 'book-title', value: root.title, 'aria-label': 'Book title',
-      oninput: (e) => { root.title = e.target.value; changed(); document.querySelectorAll('[data-root-title]').forEach((x) => (x.textContent = root.title)); },
-    }),
-    h('nav', { class: 'tabs', 'aria-label': 'Views' },
-      groups.map((g) => h('div', { class: 'tab-group', role: 'group', 'aria-label': g.label, title: g.hint },
-        h('span', { class: 'tab-group-label', 'aria-hidden': 'true' }, g.label),
-        g.views.map(([id, label]) => h('button', {
-          class: `tab ${state.view === id ? 'active' : ''}`, 'aria-current': state.view === id ? 'page' : null,
-          onclick: () => { state.view = id; render(); },
-        }, label)),
-        g.extra))),
-    h('div', { class: 'spacer' }),
-    h('div', { id: 'status', class: 'status' }),
-    h('div', { class: 'bar-cluster', role: 'group', 'aria-label': 'Layout' },
-      h('button', {
-        class: `icon-btn panel-btn ${prefs.inspector ? 'on' : ''}`, 'aria-pressed': String(prefs.inspector),
-        title: `${prefs.inspector ? 'Hide' : 'Show'} the side panel (${MOD}\\)`, onclick: toggleInspector,
-      }, icon('panel')),
-      h('button', { class: 'icon-btn', title: `Focus mode (${MOD}.)`, onclick: toggleFocus }, icon('focus'))),
-    h('div', { class: 'bar-cluster', role: 'group', 'aria-label': 'App' },
-      lookMenu(),
-      h('button', { class: 'icon-btn help-btn', title: 'Help & tour (?)', onclick: () => showHelp() }, icon('help')),
-      h('button', { class: 'icon-btn', title: 'Settings', onclick: openSettings }, icon('gear'))),
-  );
+    h('div', { class: 'topbar-row' },
+      h('button', { class: 'brand', title: 'Your desk', onclick: goDesk }, h('div', { class: 'logo-blocks small', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))),
+      fileMenu(),
+      h('input', {
+        class: 'book-title', value: root.title, 'aria-label': 'Book title',
+        oninput: (e) => { root.title = e.target.value; changed(); document.querySelectorAll('[data-root-title]').forEach((x) => (x.textContent = root.title)); },
+      }),
+      h('div', { class: 'spacer' }),
+      h('div', { id: 'status', class: 'status' }),
+      h('div', { class: 'bar-cluster', role: 'group', 'aria-label': 'Layout' },
+        h('button', {
+          class: `icon-btn panel-btn ${prefs.inspector ? 'on' : ''}`, 'aria-pressed': String(prefs.inspector),
+          title: `${prefs.inspector ? 'Hide' : 'Show'} the side panel (${MOD}\\)`, onclick: toggleInspector,
+        }, icon('panel')),
+        h('button', { class: 'icon-btn', title: `Focus mode (${MOD}.)`, onclick: toggleFocus }, icon('focus'))),
+      h('div', { class: 'bar-cluster', role: 'group', 'aria-label': 'App' },
+        lookMenu(),
+        h('button', { class: 'icon-btn help-btn', title: 'Help & tour (?)', onclick: () => showHelp() }, icon('help')),
+        h('button', { class: 'icon-btn', title: 'Settings', onclick: openSettings }, icon('gear')))),
+    renderStageBar());
 }
 
 function fileMenu() {
@@ -1371,7 +1365,7 @@ function renderBinder() {
 
   const rootRow = h('div', {
     class: `row root ${state.selectedId === 'root' && state.view !== 'notebook' ? 'selected' : ''}`,
-    onclick: () => { state.multi.clear(); select('root', state.view === 'notebook' ? 'write' : state.view); },
+    onclick: () => { state.multi.clear(); state.selectedId = 'root'; goDesk(); },
   }, icon('book', 'type-icon'), h('span', { class: 'row-title', 'data-root-title': '' }, p.nodes.root.title));
 
   const tree = h('div', { class: 'tree', role: 'tree', 'aria-multiselectable': 'true' }, rootRow, rows,
@@ -1482,8 +1476,12 @@ function rowClick(e, id) {
 function selectRow(id) {
   state.multi.clear();
   state.anchor = id;
-  if (id !== state.selectedId || state.view === 'notebook') select(id, state.view === 'notebook' ? 'write' : state.view);
+  // Views about one block or the structure stay put; pages that aren't (Desk, Premise,
+  // Share, Notebook, Trash) open the block in Write.
+  const stays = ['write', 'board', 'outline', 'map', 'read'].includes(state.view);
+  if (id !== state.selectedId || !stays) select(id, stays ? state.view : 'write');
   else paintMulti();
+  if (state.view === 'read') document.querySelector(`.read-block[data-id="${id}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
   document.querySelector(`.tree .row[data-id="${id}"]`)?.focus({ preventScroll: true });
 }
 
@@ -1723,7 +1721,7 @@ function contextMenu(at, items, { onClose, above = false } = {}) {
 // ---- render: main views ------------------------------------------------------------
 
 function renderMain() {
-  const view = { write: renderWrite, board: renderBoard, outline: renderOutline, map: renderMap, read: renderRead, notebook: renderNotebook, trash: renderTrash }[state.view] || renderWrite;
+  const view = { desk: renderDesk, premise: renderBookOverview, share: renderShare, write: renderWrite, board: renderBoard, outline: renderOutline, map: renderMap, read: renderRead, notebook: renderNotebook, trash: renderTrash }[state.view] || renderWrite;
   return h('main', { class: `main view-${state.view}` }, view());
 }
 
@@ -1771,6 +1769,7 @@ function renderWrite() {
   ed.addEventListener('input', () => {
     n.content = /^(\s|<br>|<p><br><\/p>|<div><br><\/div>)*$/.test(ed.innerHTML) ? '' : ed.innerHTML;
     state.session?.touched.add(n.id);
+    n.editedAt = new Date().toISOString();
     changed();
     if (state.drawer?.kind === 'echoes') { clearTimeout(countTimer.echo); countTimer.echo = setTimeout(paintDrawer, 700); }
     followCaret(ed);
@@ -1832,7 +1831,7 @@ function renderWrite() {
     ed,
     h('div', { class: 'write-foot' },
       h('button', { class: 'btn small', onclick: () => addAfter(n.id) }, icon('plus'), `New ${typeLabel} after this`),
-      next && h('button', { class: 'btn small ghost', onclick: () => select(next.id) }, `Next: ${next.title} →`)),
+      (() => { const up = nextInOrder(n.id); return up && h('button', { class: 'btn small primary next-up', onclick: () => select(up.id, 'write'), title: 'The next block in the book' }, `Next up: ${up.title} →`); })()),
   );
 }
 
@@ -2560,13 +2559,17 @@ function renderInspectorOnly() {
 function renderInspector() {
   const n = sel();
   const isRoot = n.id === 'root';
+  const block = !isRoot && inspectorBlock(n);
+  const ideas = !isRoot && renderIdeasFor(n);
   if (state.view === 'notebook') return h('aside', { class: 'inspector' }, renderSpark(n));
-  return h('aside', { class: 'inspector' },
-    isRoot ? null : inspectorBlock(n),
-    isRoot ? null : renderIdeasFor(n),
-    renderSpark(n),
-    renderAssistant(n),
-  );
+  const byStage = {
+    gather: [renderSpark(n), ideas, renderAssistant(n)],
+    plan: [block, renderAssistant(n), ideas],
+    draft: [block, ideas, renderSpark(n), renderAssistant(n)],
+    revise: [revisePanel(n), renderAssistant(n), block],
+    share: [sharePanel(), block],
+  }[state.stage] || [block, renderSpark(n), renderAssistant(n)];
+  return h('aside', { class: 'inspector' }, byStage);
 }
 
 function inspectorBlock(n) {
@@ -2616,7 +2619,12 @@ function renderAssistant(n) {
   }
   const isRoot = n.id === 'root';
   const hasText = !!M.stripHtml(n.content).trim();
-  const list = isRoot ? ['structure', 'breakdown'] : ['direction', 'flow', ...(hasText ? ['summarize'] : []), 'breakdown'];
+  const list = ({
+    gather: [],
+    plan: isRoot ? ['structure', 'breakdown'] : ['direction', 'breakdown', ...(hasText ? ['summarize'] : [])],
+    draft: isRoot ? [] : ['direction', 'flow'],
+    revise: isRoot ? ['structure'] : ['flow', ...(hasText ? ['summarize'] : [])],
+  })[state.stage] ?? (isRoot ? ['structure', 'breakdown'] : ['direction', 'flow', ...(hasText ? ['summarize'] : []), 'breakdown']);
   const res = state.aiResults[n.id];
   const askBox = h('textarea', { rows: 2, placeholder: isRoot ? 'Ask about the book…' : `Ask about this ${M.TYPES[n.type].label.toLowerCase()}…`, onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) runAsk(); } });
   function runAsk() {
@@ -2628,7 +2636,7 @@ function renderAssistant(n) {
       class: 'ai-btn', disabled: res?.loading, title: AI.actions[a].hint,
       onclick: () => runAI(n.id, a, () => AI.actions[a].run(aiSettings(), P(), n.id)),
     }, h('strong', null, AI.actions[a].label), h('span', null, AI.actions[a].hint)))),
-    (isRoot || n.children.length > 0) && h('button', {
+    (isRoot || n.children.length > 0) && state.stage !== 'revise' && state.stage !== 'gather' && h('button', {
       class: 'ai-btn', onclick: () => runStoryCheck(n.id),
       title: 'Reads the writing for plot holes, continuity slips, dropped threads and motivation gaps',
     }, h('strong', null, 'Story check'), h('span', null, `Plot holes, continuity, dropped threads${isRoot ? ' across the book' : ` in this ${M.TYPES[n.type].label.toLowerCase()}`}.`)),
@@ -3771,6 +3779,251 @@ function fitMap() {
   const z = Math.min(1.2, (wrap.clientWidth - 80) / L.width, (wrap.clientHeight - 80) / L.height);
   state.mapScroll = { left: 0, top: 0 };
   setMapZoom(Math.max(0.2, z));
+}
+
+// ---- stages: the flow of writing a book -------------------------------------------------------
+// Gather → Plan → Draft → Revise → Share. Each stage shows only its own views, and the
+// side panel follows it. You move between stages yourself; the Desk only suggests.
+
+const STAGES = [
+  { id: 'gather', n: 1, label: 'Gather', blurb: 'Find the idea: premise, fragments, what-ifs.', views: [['premise', 'Premise'], ['notebook', 'Notebook']] },
+  { id: 'plan', n: 2, label: 'Plan', blurb: 'Give it a shape, and every piece a direction.', views: [['map', 'Map'], ['outline', 'Outline'], ['board', 'Board']] },
+  { id: 'draft', n: 3, label: 'Draft', blurb: 'Write it, one block at a time.', views: [['write', 'Write'], ['notebook', 'Notebook']] },
+  { id: 'revise', n: 4, label: 'Revise', blurb: 'Read it through and make it good.', views: [['read', 'Read'], ['write', 'Write']] },
+  { id: 'share', n: 5, label: 'Share', blurb: 'Export, print, and show where it stands.', views: [['share', 'Share'], ['read', 'Read']] },
+];
+const stageById = (id) => STAGES.find((s) => s.id === id);
+const DEFAULT_STAGE = { premise: 'gather', notebook: 'gather', map: 'plan', outline: 'plan', board: 'plan', write: 'draft', read: 'revise', share: 'share' };
+
+// Keep the stage in step with the view, whichever way you got there (a click in the outline,
+// a double-click on the map…): stay in the current stage if it has this view.
+function syncStage() {
+  if (state.view === 'desk') { state.stage = null; return; }
+  if (state.view === 'trash') return;
+  const cur = stageById(state.stage);
+  if (cur && cur.views.some(([v]) => v === state.view)) return;
+  state.stage = DEFAULT_STAGE[state.view] || state.stage || 'draft';
+}
+
+function goStage(id) {
+  const st = stageById(id);
+  state.stage = id;
+  if (!st.views.some(([v]) => v === state.view)) state.view = st.views[0][0];
+  // Drafting starts on something to write, not the book overview.
+  if (id === 'draft' && (state.selectedId === 'root' || sel().children.length)) {
+    const next = nextUp();
+    if (next) state.selectedId = next.id;
+  }
+  render();
+}
+
+function goDesk() {
+  state.view = 'desk';
+  state.multi.clear();
+  render();
+}
+
+// ---- reading the project ---------------------------------------------------------------------
+
+const leavesOf = (p) => M.flatten(p).map((x) => x.node).filter((n) => !n.children.length);
+const blockWords = (n) => M.nodeWords(n);
+
+// The block to write next: the one you were last working on (if unfinished), else the first
+// unwritten one in book order.
+function nextUp() {
+  const p = P();
+  const leaves = leavesOf(p);
+  const recent = leaves.filter((n) => n.editedAt && n.status !== 'done' && !(n.targetWords && blockWords(n) >= n.targetWords))
+    .sort((a, b) => b.editedAt.localeCompare(a.editedAt))[0];
+  return recent || leaves.find((n) => !n.content) || leaves.find((n) => n.status !== 'done') || null;
+}
+
+// The next block in book order after this one (for "Next up" at the end of a draft).
+function nextInOrder(id) {
+  const leaves = leavesOf(P());
+  const order = M.flatten(P()).map((x) => x.node.id);
+  const at = order.indexOf(id);
+  return leaves.find((n) => order.indexOf(n.id) > at) || null;
+}
+
+function stageProgress() {
+  const p = P();
+  const root = p.nodes.root;
+  const all = M.flatten(p).map((x) => x.node);
+  const leaves = leavesOf(p);
+  const words = M.treeWords(p);
+  const ideas = p.notebook.length;
+  const directed = all.filter((n) => n.synopsis.trim()).length;
+  const written = leaves.filter((n) => n.content).length;
+  const revised = leaves.filter((n) => n.status === 'revising' || n.status === 'done').length;
+  const done = leaves.filter((n) => n.status === 'done').length;
+  const s = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  return {
+    gather: {
+      pct: (root.synopsis.trim() ? 0.6 : 0) + Math.min(0.4, ideas / 25),
+      line: root.synopsis.trim() ? `Premise written · ${s(ideas, 'idea', 'ideas')} in the notebook` : 'Start with a premise: what happens, and what it’s really about.',
+    },
+    plan: {
+      pct: all.length ? directed / all.length : 0,
+      line: all.length <= 3 ? 'Sketch the parts and chapters on the Map.' : `${directed} of ${all.length} blocks have a direction`,
+    },
+    draft: {
+      pct: p.targetWords ? Math.min(1, words / p.targetWords) : leaves.length ? written / leaves.length : 0,
+      line: `${written} of ${s(leaves.length, 'section', 'sections')} drafted · ${fmt(words)}${p.targetWords ? ` of ${fmt(p.targetWords)}` : ''} words`,
+    },
+    revise: {
+      pct: leaves.length ? revised / leaves.length : 0,
+      line: written ? `${revised} of ${s(written, 'drafted section', 'drafted sections')} revised` : 'Nothing drafted yet to revise.',
+    },
+    share: {
+      pct: leaves.length ? done / leaves.length : 0,
+      line: `${done} of ${s(leaves.length, 'section', 'sections')} marked done`,
+    },
+  };
+}
+
+// What to do next, most useful first. The Desk shows these; it never moves you by itself.
+function suggestions() {
+  const p = P();
+  const root = p.nodes.root;
+  const all = M.flatten(p).map((x) => x.node);
+  const leaves = leavesOf(p);
+  const out = [];
+  const add = (s) => out.push(s);
+  const write = (n) => () => { state.selectedId = n.id; state.view = 'write'; state.stage = 'draft'; render(); };
+
+  if (!root.synopsis.trim()) {
+    add({ stage: 'gather', title: 'Start here: write your premise', body: 'Two or three sentences: what happens, and what it’s really about. It keeps every later choice pointed somewhere.', label: 'Write the premise', go: () => { state.view = 'premise'; state.stage = 'gather'; render(); } });
+  }
+  if (all.length <= 3) {
+    add({ stage: 'plan', title: 'Sketch the big pieces', body: 'Lay out the parts and chapters you imagine on the Map. Rough is fine; you’ll move things around.', label: 'Open the Map', go: () => goStage('plan') });
+  }
+  const next = nextUp();
+  if (next) {
+    const w = blockWords(next);
+    const where = M.ancestors(p, next.id).filter((a) => a.id !== 'root').map((a) => a.title).join(' › ');
+    add({
+      stage: 'draft',
+      title: next.content ? `Continue: ${next.title}` : `Start drafting: ${next.title}`,
+      body: [where, next.content ? `${fmt(w)}${next.targetWords ? ` of ${fmt(next.targetWords)}` : ''} words so far` : next.synopsis || 'Not started yet.'].filter(Boolean).join(' · '),
+      label: next.content ? 'Keep writing' : 'Start writing',
+      go: write(next),
+    });
+  }
+  const undirected = all.filter((n) => n.type !== 'section' && !n.synopsis.trim());
+  if (undirected.length && all.length > 3) {
+    add({ stage: 'plan', title: `Give ${undirected.length} ${undirected.length === 1 ? M.TYPES[undirected[0].type].label.toLowerCase() : 'parts and chapters'} a direction`, body: `${undirected.slice(0, 3).map((n) => `“${n.title}”`).join(', ')}${undirected.length > 3 ? '…' : ''} still need a “what happens”.`, label: 'Plan in the Outline', go: () => { state.view = 'outline'; state.stage = 'plan'; render(); } });
+  }
+  // A whole part (or chapter, when there are no parts) drafted but not yet revised: read it.
+  const units = all.filter((n) => n.type === 'part').length ? all.filter((n) => n.type === 'part') : all.filter((n) => n.type === 'chapter');
+  const ripe = units.find((u) => {
+    const ls = M.flatten(p, u.id).map((x) => x.node).filter((n) => !n.children.length);
+    return ls.length && ls.every((n) => n.content) && !ls.every((n) => n.status === 'revising' || n.status === 'done');
+  });
+  if (ripe) {
+    add({ stage: 'revise', title: `${ripe.title} is drafted. Read it through.`, body: 'Read it as a reader would, start to finish, before changing anything. Echoes and Story check can help after.', label: 'Read it', go: () => { state.readScope = ripe.id; state.view = 'read'; state.stage = 'revise'; render(); } });
+  }
+  if (leaves.length && leaves.every((n) => n.status === 'done')) {
+    add({ stage: 'share', title: 'Every section is done. Share it.', body: 'Export a clean manuscript, or a progress snapshot for your readers.', label: 'Share', go: () => goStage('share') });
+  }
+  // Put the most natural next move first: once drafting has begun, keep writing.
+  const drafting = leaves.some((n) => n.content);
+  if (drafting && root.synopsis.trim()) out.sort((a, b) => (b.stage === 'draft') - (a.stage === 'draft'));
+  return out;
+}
+
+// ---- the two-line top bar ----------------------------------------------------------------------
+
+function renderStageBar() {
+  const prog = stageProgress();
+  const st = stageById(state.stage);
+  return h('div', { class: 'topbar-row stage-row' },
+    h('button', { class: `desk-btn ${state.view === 'desk' ? 'on' : ''}`, title: 'Your desk: where you are, and what to do next', onclick: goDesk }, icon('home'), 'Desk'),
+    h('nav', { class: 'stages', 'aria-label': 'Stages of writing' },
+      STAGES.map((s) => h('button', {
+        class: `stage ${state.stage === s.id ? 'on' : ''}`, 'aria-current': state.stage === s.id ? 'step' : null,
+        title: `${s.label}: ${s.blurb}\n${prog[s.id].line}`,
+        style: `--pct:${Math.round(prog[s.id].pct * 100)}%`,
+        onclick: () => goStage(s.id),
+      }, h('span', { class: 'stage-n' }, s.n), h('span', { class: 'stage-label' }, s.label)))),
+    st && h('div', { class: 'tabs subtabs', role: 'tablist', 'aria-label': `${st.label} views` },
+      st.views.map(([id, label]) => h('button', {
+        class: `tab ${state.view === id ? 'active' : ''}`, role: 'tab', 'aria-selected': String(state.view === id),
+        onclick: () => { state.view = id; render(); },
+      }, id === 'notebook' && P().notebook.length ? `${label} · ${P().notebook.length}` : label))),
+    h('div', { class: 'spacer' }),
+    st && h('div', { class: 'stage-guide', title: st.blurb }, prog[st.id].line));
+}
+
+// ---- the Desk ---------------------------------------------------------------------------------
+
+function renderDesk() {
+  const p = P();
+  const root = p.nodes.root;
+  const prog = stageProgress();
+  const [first, ...rest] = suggestions();
+  const recent = M.flatten(p).map((x) => x.node).filter((n) => n.editedAt).sort((a, b) => b.editedAt.localeCompare(a.editedAt)).slice(0, 4);
+  const stageChip = (id) => { const s = stageById(id); return h('span', { class: 'stage-chip' }, h('span', { class: 'stage-n' }, s.n), s.label); };
+  return h('div', { class: 'desk' },
+    h('header', { class: 'desk-head' },
+      h('div', { class: 'eyebrow' }, 'Your desk'),
+      h('h1', null, root.title),
+      root.synopsis.trim()
+        ? h('p', { class: 'desk-premise' }, root.synopsis, ' ', h('button', { class: 'link', onclick: () => { state.view = 'premise'; state.stage = 'gather'; render(); } }, 'Edit'))
+        : h('p', { class: 'muted' }, p.author ? `by ${p.author}` : '')),
+    first && h('section', { class: 'next-card' },
+      h('div', { class: 'next-top' }, h('span', { class: 'eyebrow' }, 'Next step'), stageChip(first.stage)),
+      h('h2', null, first.title),
+      h('p', null, first.body),
+      h('button', { class: 'btn primary', onclick: first.go }, first.label, ' →')),
+    rest.length > 0 && h('section', { class: 'also' },
+      h('div', { class: 'eyebrow' }, 'Or'),
+      rest.slice(0, 3).map((s) => h('button', { class: 'also-item', onclick: s.go },
+        stageChip(s.stage), h('span', { class: 'also-text' }, h('strong', null, s.title), h('span', { class: 'muted small' }, s.body)), h('span', { class: 'also-go' }, `${s.label} →`)))),
+    h('section', { class: 'desk-stages' },
+      h('div', { class: 'eyebrow' }, 'Where the book stands'),
+      h('div', { class: 'stage-strip' }, STAGES.map((s) => h('button', { class: 'stage-col', onclick: () => goStage(s.id) },
+        h('div', { class: 'stage-col-top' }, h('span', { class: 'stage-n' }, s.n), h('strong', null, s.label)),
+        h('div', { class: 'stage-meter' }, h('i', { style: `width:${Math.round(prog[s.id].pct * 100)}%` })),
+        h('span', { class: 'muted small' }, prog[s.id].line))))),
+    recent.length > 0 && h('section', { class: 'desk-recent' },
+      h('div', { class: 'eyebrow' }, 'Pick up where you left off'),
+      h('div', { class: 'recent-list' }, recent.map((n) => h('button', { class: 'recent-item', onclick: () => { state.selectedId = n.id; state.view = 'write'; state.stage = n.status === 'revising' ? 'revise' : 'draft'; render(); } },
+        h('span', { class: `dot status-${n.status}` }),
+        h('span', { class: 'recent-title' }, n.title),
+        h('span', { class: 'muted small' }, `${fmt(M.treeWords(p, n.id))} w · ${ago(Date.parse(n.editedAt))}`))))),
+  );
+}
+
+// ---- Share page ----------------------------------------------------------------------------------
+
+function renderShare() {
+  const prog = stageProgress();
+  return h('div', { class: 'board share-page' },
+    h('div', { class: 'board-head' },
+      h('h2', null, 'Share'),
+      h('p', { class: 'muted' }, `${prog.share.line}. Export it to read on paper, mark up, send to a reader, or show someone where it stands.`)),
+    h('div', { class: 'share-grid' }, Object.entries(X.KINDS).map(([id, k]) => h('button', { class: 'share-card', onclick: () => openExport({ kind: id }) },
+      h('strong', null, k.label), h('span', null, k.who), h('span', { class: 'share-go' }, 'Preview & export →')))),
+    h('p', { class: 'muted small' }, 'Want to read it through first? ', h('button', { class: 'link', onclick: () => { state.view = 'read'; render(); } }, 'Open the Read view'), '.'));
+}
+
+// ---- the side panel, by stage ------------------------------------------------------------------
+
+function revisePanel(n) {
+  return h('section', { class: 'panel' },
+    h('div', { class: 'panel-head' }, h('span', { class: 'eyebrow' }, 'Revise'), h('span', { class: 'panel-title' }, n.id === 'root' ? 'The whole book' : n.title)),
+    h('div', { class: 'tool-list' },
+      h('button', { class: 'ai-btn', onclick: () => { if (state.view !== 'read' && state.view !== 'write') state.view = 'write'; openEchoes(); } }, h('strong', null, 'Echoes'), h('span', null, 'Repeated words, phrases and crutch words.')),
+      aiReady() && n.id !== 'root' && state.view === 'write' && h('button', { class: 'ai-btn', onclick: runPolish }, h('strong', null, '✦ Polish'), h('span', null, 'Select a passage for other wordings, or line-edit this block.')),
+      aiReady() && h('button', { class: 'ai-btn', onclick: () => runStoryCheck(n.id === 'root' || n.children.length ? n.id : M.parentOf(P(), n.id).id) }, h('strong', null, '✦ Story check'), h('span', null, 'Plot holes, continuity, dropped threads.'))),
+    n.id !== 'root' && h('div', { class: 'kv revise-status' }, h('label', null, 'Status'), statusSelect(n)));
+}
+
+function sharePanel() {
+  return h('section', { class: 'panel' },
+    h('div', { class: 'panel-head' }, h('span', { class: 'eyebrow' }, 'Share')),
+    h('div', { class: 'tool-list' }, Object.entries(X.KINDS).map(([id, k]) => h('button', { class: 'ai-btn', onclick: () => openExport({ kind: id }) }, h('strong', null, k.label), h('span', null, k.who.split('. ')[0] + '.')))));
 }
 
 // ---- global keys & lifecycle ------------------------------------------------------------
