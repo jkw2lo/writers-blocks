@@ -1,0 +1,71 @@
+{
+  "url": "https://jkw2lo.github.io/writers-blocks/",
+  "shots": [
+    {
+      "file": "desktop.png",
+      "steps": [
+        "eval:[...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.trim().startsWith(\"Explore a sample\")).click()",
+        "wait:1500",
+        "click:.tour-skip",
+        "eval:document.getElementById('toast').style.visibility = 'hidden'"
+      ]
+    },
+    {
+      "file": "map.png",
+      "scale": 2,
+      "size": [
+        1440,
+        860
+      ],
+      "steps": [
+        "eval:[...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.trim().startsWith(\"Explore a sample\")).click()",
+        "wait:1500",
+        "click:.tour-skip",
+        "eval:[...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.trim().startsWith(\"2Plan\")).click()",
+        "wait:800",
+        "eval:document.getElementById('toast').style.visibility = 'hidden'"
+      ],
+      "clip": "main.main",
+      "maxHeight": 600
+    },
+    {
+      "file": "outline.png",
+      "scale": 2,
+      "size": [
+        1440,
+        860
+      ],
+      "steps": [
+        "eval:[...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.trim().startsWith(\"Explore a sample\")).click()",
+        "wait:1500",
+        "click:.tour-skip",
+        "eval:[...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.trim().startsWith(\"2Plan\")).click()",
+        "eval:[...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.trim().startsWith(\"Outline\")).click()",
+        "wait:800",
+        "eval:document.getElementById('toast').style.visibility = 'hidden'"
+      ],
+      "clip": "main.main",
+      "maxHeight": 560
+    },
+    {
+      "file": "canvas.png",
+      "scale": 2,
+      "size": [
+        1440,
+        860
+      ],
+      "steps": [
+        "eval:[...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.trim().startsWith(\"Explore a sample\")).click()",
+        "wait:1500",
+        "click:.tour-skip",
+        "eval:[...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.trim().startsWith(\"Notebook\")).click()",
+        "wait:800",
+        "eval:[...document.querySelectorAll('button')].find(b => b.offsetParent && b.textContent.trim().startsWith(\"Canvas\")).click()",
+        "wait:800",
+        "eval:document.getElementById('toast').style.visibility = 'hidden'"
+      ],
+      "clip": "main.main",
+      "maxHeight": 640
+    }
+  ]
+}

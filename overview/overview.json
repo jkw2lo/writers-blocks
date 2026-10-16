@@ -1,0 +1,85 @@
+{
+  "version": 3,
+  "name": "Writers Blocks",
+  "tagline": "Shape long-form writing",
+  "pitch": "A workspace for books: map the structure, give every piece a direction, and rearrange freely as you draft.",
+  "accent": "#b5502a",
+  "status": "Live",
+  "problem": "One long document hides a book's shape until it's too late.",
+  "stats": [
+    {
+      "value": "5",
+      "label": "stages: gather, plan, draft, revise, share"
+    },
+    {
+      "value": "6",
+      "label": "views of one book, from Map to Read"
+    },
+    {
+      "value": "50",
+      "label": "brainstorming prompts of 7 kinds"
+    }
+  ],
+  "features": [
+    {
+      "title": "Map the whole book",
+      "text": "Parts, chapters and sections as a tree you restructure by dragging.",
+      "details": [
+        "Sideways or top-down, with status and word count on every card",
+        "Fold branches, zoom, and fit the book to the screen",
+        "Split, merge and move blocks, and undo any change"
+      ],
+      "screen": {
+        "src": "map.png",
+        "alt": "The Map view of a sample novel, The Salt Year: parts branching into chapters and sections, each card with a word count"
+      }
+    },
+    {
+      "title": "Every piece has a purpose",
+      "text": "Each block says what happens and why it's here, so you write toward something.",
+      "details": [
+        "Read down the Outline to check the story holds together",
+        "Status from idea to done, word targets and margin notes",
+        "Write view shows the blocks just before and after"
+      ],
+      "screen": {
+        "src": "outline.png",
+        "alt": "The Outline view: a table of blocks with What happens, Why it's here, status and word count"
+      }
+    },
+    {
+      "title": "Brainstorm and keep it",
+      "text": "Ideas go on a canvas like sticky notes, grouped, linked and tied to a block.",
+      "details": [
+        "Deal a prompt, freewrite on a timer, or collide two ideas",
+        "Drag an idea onto the outline and it becomes a block"
+      ],
+      "screen": {
+        "src": "canvas.png",
+        "alt": "The Notebook canvas: sticky notes grouped under The ledger and Salt as metaphor, linked with dotted lines"
+      }
+    },
+    {
+      "title": "Your file, your editor",
+      "text": "Projects live in a file on your computer, and the app works offline.",
+      "details": [
+        "Optional AI editor asks and suggests; it doesn't draft for you",
+        "Autosaves to that file in Chrome, Edge, Arc and Brave",
+        "Export to PDF, Word, Markdown or a single web page"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "src": "desktop.png",
+      "alt": "Writers Blocks' Desk for The Salt Year: the premise, a suggested next step, and progress through the five stages",
+      "caption": "The Desk suggests what to work on next"
+    }
+  ],
+  "facts": {
+    "worksOn": "Desktop browsers, offline too",
+    "data": "A file on your computer",
+    "builtWith": "Plain HTML, CSS and JS",
+    "started": "Sep 2026"
+  }
+}
