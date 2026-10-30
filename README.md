@@ -103,6 +103,10 @@ Off by default. Turn it on in **Settings** and add your own [Anthropic API key](
 
 Privacy: your key is kept in memory for the current tab only, unless you tick "remember on this device". Text is sent straight from your browser to Anthropic, and only when you click an action. It sends the outline (titles, synopses, purposes) and the current block's text, not the whole manuscript. Uses Claude Opus 5 by default (Sonnet 5 is available as a faster, cheaper option).
 
+## Demo for portfolio visitors
+
+Opened from Jen's portfolio (`?from=portfolio`) with nothing saved yet, the app offers two ways in: **See the demo** opens the sample, The Salt Year, with a small banner whose Start fresh closes it again (the sample is never saved, so the demo lasts while it's open), or **Start fresh** leaves the welcome screen as it is. The setup is at the top of `js/app.js`. Anyone arriving another way, or with their own data, sees none of it. The overlay is `demo-welcome.js`, shared with the other projects (its master is in the portfolio repo, `tools/demo-welcome.js`).
+
 ## Run locally
 
 No build step. Serve the folder with any static server:

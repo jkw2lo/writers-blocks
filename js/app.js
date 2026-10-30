@@ -5,7 +5,8 @@
 import { toast } from './core/dom.js';
 import { state } from './core/state.js';
 import { select } from './project/commands.js';
-import { refreshShelf, save, saveAs } from './project/files.js';
+import { closeProject, cmdSample, refreshShelf, save, saveAs } from './project/files.js';
+import { shelf } from './lib/storage.js';
 import { loadBackupDir } from './project/backups.js';
 import { openExport } from './ui/export-dialog.js';
 import { app, render } from './ui/shell.js';
@@ -44,6 +45,22 @@ import './views/map.js';
 import './project/flow.js';
 import './views/desk.js';
 import './views/share.js';
+
+// ---- a demo for visitors from Jen's portfolio (js/demo-welcome.js) ---------------------
+// The sample is only ever in memory, never saved, so the demo lasts while it's open.
+
+const SAMPLE = 'The Salt Year';
+window.DemoWelcome?.init({
+  id: 'writers-blocks',
+  name: 'Writers Blocks',
+  accent: '#b5502a',
+  demo: 'The Salt Year, a novel taking shape: an outline of 14 blocks from idea to revising, with notes.',
+  fresh: 'An empty desk. Start a project, open one, or import a manuscript.',
+  isEmpty: async () => !state.project && !(await shelf()).length,
+  loadDemo: () => cmdSample(),
+  clear: () => { state.dirty = false; closeProject(); },
+  stillDemo: () => state.project?.nodes?.root?.title === SAMPLE,
+});
 
 // ---- global keys & lifecycle ------------------------------------------------------------
 
