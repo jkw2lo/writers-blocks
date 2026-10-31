@@ -6,7 +6,7 @@
 // Fonts: cache first, since they never change once published.
 // Anything else (the optional AI assistant) goes straight to the network.
 
-const VERSION = 'wb-v13';
+const VERSION = 'wb-v14';
 const APP = [
   './',
   'index.html',
