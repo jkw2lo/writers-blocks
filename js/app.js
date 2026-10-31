@@ -3,9 +3,10 @@
 // ui/ (shell, panels, menus, dialogs), views/ (one file per view) and lib/ (model & services).
 
 import { toast } from './core/dom.js';
-import { state } from './core/state.js';
+import { prefs, state } from './core/state.js';
 import { select } from './project/commands.js';
 import { closeProject, cmdSample, refreshShelf, save, saveAs } from './project/files.js';
+import { goDesk, goStage } from './project/flow.js';
 import { shelf } from './lib/storage.js';
 import { loadBackupDir } from './project/backups.js';
 import { openExport } from './ui/export-dialog.js';
@@ -47,7 +48,9 @@ import './views/desk.js';
 import './views/share.js';
 
 // ---- a demo for visitors from Jen's portfolio (js/demo-welcome.js) ---------------------
-// The sample is only ever in memory, never saved, so the demo lasts while it's open.
+// The sample is only ever in memory, never saved, so the demo lasts while it's open. The demo
+// has its own walk round the stages, so the first-project tour (help-tour.js) sits this one out;
+// it's still in Help, and a visitor's own first project still gets it.
 
 const SAMPLE = 'The Salt Year';
 window.DemoWelcome?.init({
@@ -57,9 +60,32 @@ window.DemoWelcome?.init({
   demo: 'The Salt Year, a novel taking shape: an outline of 14 blocks from idea to revising, with notes.',
   fresh: 'An empty desk. Start a project, open one, or import a manuscript.',
   isEmpty: async () => !state.project && !(await shelf()).length,
-  loadDemo: () => cmdSample(),
+  loadDemo: async () => {
+    const toured = prefs.toured;
+    prefs.toured = true; // just for this opening, not saved
+    await cmdSample();
+    setTimeout(() => { prefs.toured = toured; }, 1000);
+  },
   clear: () => { state.dirty = false; closeProject(); },
   stillDemo: () => state.project?.nodes?.root?.title === SAMPLE,
+  tour: [
+    { go: goDesk, el: 'main.main', title: 'Your desk',
+      text: 'It reads the book and suggests a next step, like the block to keep writing or a part ready to read through. It suggests; you choose.' },
+    { el: '.stages', title: 'Five stages of a book',
+      text: 'Gather the idea, plan its shape, draft it, revise it, share it. Each stage shows only its own views.' },
+    { go: () => { state.view = 'map'; state.stage = 'plan'; render(); }, el: 'main.main', title: 'The map',
+      text: 'The whole book as a tree, with each block’s status and word count. Drag cards to restructure it.' },
+    { go: () => { state.view = 'board'; state.stage = 'plan'; render(); }, el: 'main.main', title: 'The board',
+      text: 'Index cards for the pieces of a chapter. Drag to reorder them, and edit what happens right on the card.' },
+    { go: () => goStage('draft'), el: '.direction', title: 'Every block has a direction',
+      text: 'What happens, and why it’s here, keep each section pointed somewhere, with the blocks before and after it close by.' },
+    { el: '.inspector .spark', title: 'Ideas when you’re stuck',
+      text: 'Brainstorm deals prompts, runs freewriting sprints and collides ideas, all about the block you’re on.' },
+    { go: () => { state.view = 'share'; state.stage = 'share'; render(); }, el: 'main.main', title: 'Export, print and share',
+      text: 'A reading copy, a draft to mark up, the outline or a progress snapshot, as PDF, Word, Markdown or a web page.' },
+    { go: () => goStage('draft'), title: 'Over to you',
+      text: 'It’s all real: write, move blocks around, try a different skin. Nothing is saved unless you save it, and Start fresh at the bottom left gives you an empty desk.' },
+  ],
 });
 
 // ---- global keys & lifecycle ------------------------------------------------------------

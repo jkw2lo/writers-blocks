@@ -21,7 +21,15 @@
        stillDemo: () => true,        // optional: is the sample still what's on screen?
        banner: true,                 // false when the app already marks its sample
        bannerAt: "bottom",           // or "top", if the app has a bar along the bottom
+       tour: [                       // optional: a walk through the demo, right after it loads
+         { go: () => {},             //   optional: get the app to the right screen first
+           el: ["#a", ".b"],         //   what to light up: the first of these that's on screen
+           title: "…", text: "…" },  //   (no el: a card in the middle)
+       ],
      });
+
+   An app whose loadDemo reloads the page still gets its tour: it's flagged before the reload
+   and run on the next start.
 */
 (function () {
   "use strict";
@@ -33,6 +41,14 @@
   var isOn = function () { try { return localStorage.getItem(flagKey()) === "on"; } catch (e) { return false; } };
   var setOn = function (on) { try { on ? localStorage.setItem(flagKey(), "on") : localStorage.removeItem(flagKey()); } catch (e) {} };
   var later = function (v) { return Promise.resolve(typeof v === "function" ? v() : v); };
+  var tourKey = function () { return "demo-welcome:" + cfg.id + ":tour"; };
+  var tourDue = function (due) {
+    try {
+      if (due === undefined) return localStorage.getItem(tourKey()) === "due";
+      due ? localStorage.setItem(tourKey(), "due") : localStorage.removeItem(tourKey());
+    } catch (e) { return false; }
+  };
+  var wait = function (ms) { return new Promise(function (ok) { setTimeout(ok, ms); }); };
 
   var CSS = [
     ":host { all: initial; }",
@@ -66,7 +82,29 @@
     ".banner button { flex: none; padding: 5px 11px; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-weight: 600; font-size: 12.5px;",
     "  background: #fff; color: #1d1b18; }",
     ".banner button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }",
+    // the walk-through: a lit-up spot (everything else dimmed by its shadow) and a card beside it
+    ".tour { position: fixed; inset: 0; z-index: 2147483000;",
+    "  font: 400 15px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1d1b18; }",
+    ".spot { position: fixed; border-radius: 14px; box-shadow: 0 0 0 3px var(--accent), 0 0 0 9999px rgba(20, 18, 16, 0.5);",
+    "  transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease; pointer-events: none; }",
+    ".spot.none { left: 50% !important; top: 45% !important; width: 0 !important; height: 0 !important; box-shadow: 0 0 0 9999px rgba(20, 18, 16, 0.5); }",
+    ".tip { position: fixed; width: min(360px, calc(100vw - 24px)); padding: 16px 18px 14px; border-radius: 16px; background: #fffdf9;",
+    "  box-shadow: 0 2px 6px rgba(0,0,0,.1), 0 24px 50px -16px rgba(0,0,0,.45); }",
+    ".tip .step { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8a847a; }",
+    ".tip h3 { margin: 4px 0 0; font: 600 19px/1.25 ui-serif, Georgia, 'Times New Roman', serif; }",
+    ".tip p.text { margin: 6px 0 0; color: #4f4a43; font-size: 14.5px; }",
+    ".tip .row { display: flex; align-items: center; gap: 8px; margin-top: 14px; }",
+    ".tip .row .skip { margin-right: auto; padding: 6px 2px; border: 0; background: none; color: #8a847a; cursor: pointer; font: inherit; font-size: 13.5px; }",
+    ".tip .row .back, .tip .row .next { padding: 8px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-weight: 600; font-size: 14px; }",
+    ".tip .row .back { border: 1.5px solid #e6e0d6; background: #fff; color: inherit; }",
+    ".tip .row .next { border: 0; background: var(--accent); color: var(--on); }",
+    ".tip button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }",
+    "@media (max-width: 599px) { .tip { left: 12px !important; right: 12px; width: auto; top: auto !important; bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important; }",
+    "  .tip.up { top: calc(12px + env(safe-area-inset-top, 0px)) !important; bottom: auto !important; } }",
+    "@media (prefers-reduced-motion: reduce) { .spot { transition: none; } }",
     "@media (prefers-color-scheme: dark) {",
+    "  .tour { color: #f1ede6; } .tip { background: #22201d; } .tip p.text { color: #c9c3b8; }",
+    "  .tip .row .back { background: #2b2925; border-color: #3d3a35; }",
     "  .scrim { color: #f1ede6; }",
     "  .card { background: #22201d; }",
     "  .lead { color: #c9c3b8; } .eyebrow, .fine { color: #9b958b; }",
@@ -122,10 +160,111 @@
       close();
       if (b.dataset.pick === "demo") {
         setOn(true);
-        later(cfg.loadDemo).then(showBanner, function (err) { setOn(false); console.warn("demo didn't load", err); });
+        if (cfg.tour && cfg.tour.length) tourDue(true);
+        later(cfg.loadDemo).then(afterDemo, function (err) { setOn(false); tourDue(false); console.warn("demo didn't load", err); });
       }
     });
     root.querySelector(".opt.demo").focus();
+  }
+
+  // the demo is in: walk through it if there's a tour waiting, then put the banner up
+  function afterDemo() {
+    if (tourDue()) { tourDue(false); return wait(350).then(function () { return runTour(cfg.tour); }).then(showBanner); }
+    showBanner();
+  }
+
+  // ---------- the walk-through ----------
+  function findEl(el) {
+    var list = typeof el === "function" ? [el()] : [].concat(el || []);
+    for (var i = 0; i < list.length; i++) {
+      var x = typeof list[i] === "string" ? document.querySelector(list[i]) : list[i];
+      if (x && x.getClientRects().length) { var r = x.getBoundingClientRect(); if (r.width && r.height) return x; }
+    }
+    return null;
+  }
+  function runTour(steps) {
+    return new Promise(function (finish) {
+      var root = mount("demo-welcome-tour");
+      var layer = document.createElement("div");
+      layer.className = "tour";
+      layer.innerHTML = '<div class="spot none"></div><div class="tip" role="dialog" aria-modal="true" aria-live="polite">' +
+        '<p class="step"></p><h3></h3><p class="text"></p><div class="row">' +
+        '<button type="button" class="skip">Skip the tour</button><button type="button" class="back">Back</button>' +
+        '<button type="button" class="next">Next</button></div></div>';
+      root.appendChild(layer);
+      var spot = layer.querySelector(".spot"), tip = layer.querySelector(".tip"), i = 0, target = null, busy = false;
+
+      // light up the target and set the card beside it: below if there's room, else above
+      function place() {
+        if (!target) {
+          spot.className = "spot none";
+          tip.classList.remove("up");
+          tip.style.left = Math.max(12, (innerWidth - tip.offsetWidth) / 2) + "px";
+          tip.style.top = Math.max(12, (innerHeight - tip.offsetHeight) / 2) + "px";
+          return;
+        }
+        var r = target.getBoundingClientRect(), pad = 8;
+        var top = Math.max(4, r.top - pad), bottom = Math.min(innerHeight - 4, r.bottom + pad);
+        // coming from no target, appear in place rather than slide in from the middle
+        var jump = spot.classList.contains("none");
+        if (jump) spot.style.transition = "none";
+        spot.className = "spot";
+        spot.style.left = Math.max(4, r.left - pad) + "px";
+        spot.style.top = top + "px";
+        spot.style.width = Math.min(innerWidth - 8, r.width + pad * 2) + "px";
+        spot.style.height = Math.max(0, bottom - top) + "px";
+        if (jump) { void spot.offsetWidth; spot.style.transition = ""; }
+        var h = tip.offsetHeight, w = tip.offsetWidth;
+        // on a phone the card sits along the bottom, unless that's where the lit-up part is
+        tip.classList.toggle("up", r.top > innerHeight - h - 40);
+        tip.style.left = Math.min(innerWidth - w - 12, Math.max(12, r.left)) + "px";
+        tip.style.top = (bottom + 12 + h < innerHeight ? bottom + 12 : top - 12 - h > 0 ? top - 12 - h : Math.max(12, innerHeight - h - 12)) + "px";
+      }
+      function show(n) {
+        if (busy) return;
+        busy = true;
+        i = n;
+        var s = steps[i];
+        later(s.go).then(function () { return wait(s.go ? 300 : 0); }).then(function () {
+          target = findEl(s.el);
+          if (target) {
+            var r = target.getBoundingClientRect();
+            // keep the top of a tall target in view, with room for the card under a short one
+            if (r.top < 60 || r.bottom > innerHeight - 40) target.scrollIntoView({ block: r.height > innerHeight * 0.5 ? "start" : "center" });
+          }
+          tip.querySelector(".step").textContent = (i + 1) + " of " + steps.length;
+          tip.querySelector("h3").textContent = s.title;
+          tip.querySelector(".text").textContent = s.text;
+          tip.querySelector(".back").hidden = i === 0;
+          tip.querySelector(".skip").hidden = i === steps.length - 1;
+          tip.querySelector(".next").textContent = i === steps.length - 1 ? "Start exploring" : "Next";
+          return wait(target ? 80 : 0);
+        }).then(function () {
+          place();
+          tip.querySelector(".next").focus({ preventScroll: true });
+          busy = false;
+        }, function (err) { busy = false; console.warn("tour step failed", err); end(); });
+      }
+      function end() {
+        removeEventListener("resize", place);
+        removeEventListener("scroll", place, true);
+        document.removeEventListener("keydown", onKey, true);
+        root.host.remove();
+        finish();
+      }
+      var onKey = function (e) {
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); end(); }
+        else if (e.key === "ArrowRight" || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); i < steps.length - 1 ? show(i + 1) : end(); }
+        else if (e.key === "ArrowLeft" && i > 0) { e.preventDefault(); e.stopPropagation(); show(i - 1); }
+      };
+      tip.querySelector(".next").addEventListener("click", function () { i < steps.length - 1 ? show(i + 1) : end(); });
+      tip.querySelector(".back").addEventListener("click", function () { show(i - 1); });
+      tip.querySelector(".skip").addEventListener("click", end);
+      addEventListener("resize", place);
+      addEventListener("scroll", place, true);
+      document.addEventListener("keydown", onKey, true);
+      show(0);
+    });
   }
 
   function showBanner() {
@@ -164,12 +303,15 @@
         try { history.replaceState(history.state, "", location.pathname + (q === "?" ? "" : q) + location.hash); } catch (e) {}
       }
       if (isOn()) {
-        if (cfg.stillDemo && !cfg.stillDemo()) setOn(false); else showBanner();
+        // the tour of a demo that reloaded the page to load runs now
+        if (cfg.stillDemo && !cfg.stillDemo()) { setOn(false); tourDue(false); } else afterDemo();
       }
       if (!fromPortfolio || isOn()) return;
       later(cfg.isEmpty).then(function (empty) { if (empty) showChoice(); });
     },
     // for an app's own "start fresh" or reset, so the banner goes with it
-    off: function () { setOn(false); hideBanner(); },
+    off: function () { setOn(false); tourDue(false); hideBanner(); },
+    // to replay the walk-through from the app's own help, if it wants to
+    tour: function () { return cfg && cfg.tour ? runTour(cfg.tour) : Promise.resolve(); },
   };
 })();

@@ -105,7 +105,7 @@ Privacy: your key is kept in memory for the current tab only, unless you tick "r
 
 ## Demo for portfolio visitors
 
-Opened from Jen's portfolio (`?from=portfolio`) with nothing saved yet, the app offers two ways in: **See the demo** opens the sample, The Salt Year, with a small banner whose Start fresh closes it again (the sample is never saved, so the demo lasts while it's open), or **Start fresh** leaves the welcome screen as it is. The setup is at the top of `js/app.js`. Anyone arriving another way, or with their own data, sees none of it. The overlay is `demo-welcome.js`, shared with the other projects (its master is in the portfolio repo, `tools/demo-welcome.js`).
+Opened from Jen's portfolio (`?from=portfolio`) with nothing saved yet, the app offers two ways in: **See the demo** opens the sample, The Salt Year, with a small banner whose Start fresh closes it again (the sample is never saved, so the demo lasts while it's open), or **Start fresh** leaves the welcome screen as it is. The demo opens with its own short walk round the book (the Desk, the five stages, the Map, the Board, a block's direction, Brainstorm and Share), so the first-project tour sits that one opening out; it's still in Help. The setup is at the top of `js/app.js`. Anyone arriving another way, or with their own data, sees none of it. The overlay is `demo-welcome.js`, shared with the other projects (its master is in the portfolio repo, `tools/demo-welcome.js`).
 
 ## Run locally
 
